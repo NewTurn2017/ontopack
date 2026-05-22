@@ -48,6 +48,7 @@ CREATE INDEX IF NOT EXISTS idx_chunks_note_ord ON chunks(note_id, ord);
 
 impl Index {
     fn init(conn: Connection) -> Result<Index> {
+        reset_legacy_derived_schema_if_needed(&conn)?;
         conn.execute_batch(SCHEMA)?;
         Ok(Index { conn })
     }
@@ -145,6 +146,50 @@ impl Index {
         }
         Ok(out)
     }
+}
+
+fn reset_legacy_derived_schema_if_needed(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "notes")? {
+        return Ok(());
+    }
+    let has_hash = table_has_column(conn, "notes", "hash")?;
+    let has_chunks = table_exists(conn, "chunks")?;
+    if has_hash && has_chunks {
+        return Ok(());
+    }
+    conn.execute_batch(
+        "
+        DROP TABLE IF EXISTS chunks;
+        DROP TABLE IF EXISTS notes_fts;
+        DROP TABLE IF EXISTS edges;
+        DROP TABLE IF EXISTS notes;
+        ",
+    )?;
+    Ok(())
+}
+
+fn table_exists(conn: &Connection, table: &str) -> Result<bool> {
+    let exists: i64 = conn.query_row(
+        "SELECT count(*) FROM sqlite_master WHERE type IN ('table','virtual table') AND name = ?1",
+        [table],
+        |r| r.get(0),
+    )?;
+    Ok(exists > 0)
+}
+
+fn table_has_column(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({})", quote_ident(table)))?;
+    let rows = stmt.query_map([], |r| r.get::<_, String>(1))?;
+    for row in rows {
+        if row? == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn quote_ident(value: &str) -> String {
+    format!("\"{}\"", value.replace('"', "\"\""))
 }
 
 fn collect_existing_note_ids(tx: &Transaction<'_>) -> Result<Vec<String>> {
@@ -254,6 +299,58 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn init_resets_legacy_derived_index_schema() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "
+            CREATE TABLE notes (
+              id TEXT PRIMARY KEY,
+              path TEXT NOT NULL,
+              type TEXT NOT NULL,
+              title TEXT NOT NULL,
+              tags TEXT NOT NULL,
+              created TEXT,
+              asset TEXT,
+              body TEXT NOT NULL,
+              mtime INTEGER NOT NULL
+            );
+            CREATE VIRTUAL TABLE notes_fts USING fts5(id UNINDEXED, title, body, tags);
+            CREATE TABLE edges (
+              src TEXT NOT NULL,
+              dst TEXT NOT NULL,
+              kind TEXT NOT NULL,
+              PRIMARY KEY (src, dst, kind)
+            );
+            INSERT INTO notes (id, path, type, title, tags, body, mtime)
+            VALUES ('old', 'notes/old.md', 'note', 'old', '[]', 'old body', 0);
+            ",
+        )
+        .unwrap();
+
+        let mut idx = Index::init(conn).unwrap();
+        let n = parse_str("fresh", "새 본문").unwrap();
+        idx.rebuild(&[n]).unwrap();
+
+        let columns: Vec<String> = {
+            let mut stmt = idx.conn.prepare("PRAGMA table_info(notes)").unwrap();
+            stmt.query_map([], |r| r.get(1))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap()
+        };
+        assert!(columns.iter().any(|c| c == "hash"));
+        let chunks_table: i64 = idx
+            .conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE name = 'chunks'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(chunks_table, 1);
     }
 
     #[test]

@@ -77,14 +77,14 @@ impl Pack {
         self.root.join(".pack").join("index.db")
     }
 
-    /// 파일을 팩에 추가한다. md/markdown은 notes/로, 그 외는 assets/와 사이드카 note로 복사한다.
+    /// 파일을 팩에 추가한다. md/markdown/txt는 notes/로, 그 외는 assets/와 사이드카 note로 복사한다.
     pub fn add_file(&self, file: &Path, note_type: &str) -> Result<AddOutcome> {
         let stem = file
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("untitled");
         let ext = file.extension().and_then(|s| s.to_str()).unwrap_or("");
-        if ext == "md" || ext == "markdown" {
+        if ext == "md" || ext == "markdown" || ext == "txt" {
             let dst = self.root.join("notes").join(format!("{stem}.md"));
             copy_without_overwrite(file, &dst)?;
             Ok(AddOutcome::Note { path: dst })
@@ -343,6 +343,23 @@ mod tests {
         ));
         assert!(root.join("assets/pic.png").exists());
         assert!(root.join("notes/pic.md").exists());
+    }
+
+    #[test]
+    fn add_file_treats_text_as_note() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        let pack = Pack::open(&root).unwrap();
+
+        let src = dir.path().join("memo.txt");
+        std::fs::write(&src, "텍스트 메모").unwrap();
+        assert!(matches!(
+            pack.add_file(&src, "note").unwrap(),
+            AddOutcome::Note { .. }
+        ));
+        assert!(root.join("notes/memo.md").exists());
+        assert!(!root.join("assets/memo.txt").exists());
     }
 
     #[test]

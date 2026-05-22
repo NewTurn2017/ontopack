@@ -6,7 +6,12 @@ pub struct Chunk {
     pub text: String,
 }
 
-pub fn chunk_text(note_id: &str, body: &str, chunk_chars: usize, overlap_chars: usize) -> Vec<Chunk> {
+pub fn chunk_text(
+    note_id: &str,
+    body: &str,
+    chunk_chars: usize,
+    overlap_chars: usize,
+) -> Vec<Chunk> {
     let trimmed = body.trim();
     if trimmed.is_empty() {
         return Vec::new();
