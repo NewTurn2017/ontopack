@@ -28,6 +28,14 @@ CREATE TABLE IF NOT EXISTS edges (
   kind TEXT NOT NULL,
   PRIMARY KEY (src, dst, kind)
 );
+CREATE TABLE IF NOT EXISTS chunks (
+  id      TEXT PRIMARY KEY,
+  note_id TEXT NOT NULL,
+  ord     INTEGER NOT NULL,
+  text    TEXT NOT NULL,
+  FOREIGN KEY(note_id) REFERENCES notes(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_chunks_note_ord ON chunks(note_id, ord);
 ";
 
 impl Index {
@@ -52,7 +60,9 @@ impl Index {
     pub fn rebuild(&mut self, notes: &[Note]) -> Result<()> {
         reject_duplicate_note_ids(notes)?;
         let tx = self.conn.transaction()?;
-        tx.execute_batch("DELETE FROM notes; DELETE FROM notes_fts; DELETE FROM edges;")?;
+        tx.execute_batch(
+            "DELETE FROM chunks; DELETE FROM notes; DELETE FROM notes_fts; DELETE FROM edges;",
+        )?;
         {
             let mut ins = tx.prepare(
                 "INSERT INTO notes (id, path, type, title, tags, created, asset, body, mtime)
@@ -62,6 +72,8 @@ impl Index {
                 .prepare("INSERT INTO notes_fts (id, title, body, tags) VALUES (?1, ?2, ?3, ?4)")?;
             let mut ins_edge =
                 tx.prepare("INSERT OR IGNORE INTO edges (src, dst, kind) VALUES (?1, ?2, ?3)")?;
+            let mut ins_chunk =
+                tx.prepare("INSERT INTO chunks (id, note_id, ord, text) VALUES (?1, ?2, ?3, ?4)")?;
             for n in notes {
                 let tags_json = serde_json::to_string(&n.tags)?;
                 let tags_text = n.tags.join(" ");
@@ -77,6 +89,14 @@ impl Index {
                     n.mtime,
                 ])?;
                 ins_fts.execute(rusqlite::params![n.id, n.title, n.body, tags_text])?;
+                for chunk in crate::chunk::chunk_text(&n.id, &n.body, 900, 120) {
+                    ins_chunk.execute(rusqlite::params![
+                        chunk.id,
+                        chunk.note_id,
+                        chunk.ord,
+                        chunk.text
+                    ])?;
+                }
                 for dst in &n.related {
                     ins_edge.execute(rusqlite::params![n.id, dst, "related"])?;
                 }
@@ -152,6 +172,45 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn creates_chunks_table_in_memory() {
+        let idx = Index::open_in_memory().unwrap();
+        let count: i64 = idx
+            .conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE name = 'chunks'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn rebuild_inserts_chunks_for_notes() {
+        let mut idx = Index::open_in_memory().unwrap();
+        let n = parse_str("a", "0123456789abcdef").unwrap();
+        idx.rebuild(&[n]).unwrap();
+
+        let chunks: i64 = idx
+            .conn
+            .query_row("SELECT count(*) FROM chunks WHERE note_id = 'a'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert!(chunks >= 1);
+
+        let first: String = idx
+            .conn
+            .query_row(
+                "SELECT id FROM chunks WHERE note_id = 'a' ORDER BY ord LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(first, "a#0000");
     }
 
     #[test]
