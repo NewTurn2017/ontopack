@@ -1,10 +1,21 @@
 use crate::note::Note;
 use anyhow::{anyhow, Result};
-use rusqlite::{Connection, OptionalExtension, Transaction};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use std::path::Path;
+use std::sync::Once;
 
 pub struct Index {
     conn: Connection,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct VectorChunkHit {
+    pub chunk_id: String,
+    pub note_id: String,
+    pub title: String,
+    pub note_type: String,
+    pub text: String,
+    pub distance: f32,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -54,6 +65,7 @@ impl Index {
     }
 
     pub fn open(db_path: &Path) -> Result<Index> {
+        register_sqlite_vec_extension();
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -61,6 +73,7 @@ impl Index {
     }
 
     pub fn open_in_memory() -> Result<Index> {
+        register_sqlite_vec_extension();
         Index::init(Connection::open_in_memory()?)
     }
 
@@ -146,6 +159,139 @@ impl Index {
         }
         Ok(out)
     }
+
+    pub fn rebuild_chunk_embeddings<E: crate::embed::Embedder>(
+        &mut self,
+        embedder: &E,
+    ) -> Result<usize> {
+        reset_vec_schema(&self.conn, embedder.dimension())?;
+        let chunks = collect_chunks_for_embedding(&self.conn)?;
+        let texts: Vec<String> = chunks.iter().map(|(_, text)| text.clone()).collect();
+        let vectors = embedder.embed_passages(&texts)?;
+        if vectors.len() != chunks.len() {
+            return Err(anyhow!(
+                "embedder returned {} vectors for {} chunks",
+                vectors.len(),
+                chunks.len()
+            ));
+        }
+
+        let tx = self.conn.transaction()?;
+        for (idx, ((chunk_id, _), vector)) in chunks.iter().zip(vectors.iter()).enumerate() {
+            if vector.len() != embedder.dimension() {
+                return Err(anyhow!(
+                    "embedding dimension mismatch for {chunk_id}: expected {}, got {}",
+                    embedder.dimension(),
+                    vector.len()
+                ));
+            }
+            let rowid = (idx + 1) as i64;
+            tx.execute(
+                "INSERT INTO vec_chunks(rowid, embedding) VALUES (?1, ?2)",
+                params![rowid, crate::embed::f32s_to_vec_blob(vector)],
+            )?;
+            tx.execute(
+                "INSERT INTO chunk_embedding_map(rowid, chunk_id) VALUES (?1, ?2)",
+                params![rowid, chunk_id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(chunks.len())
+    }
+
+    pub fn search_vector_chunks<E: crate::embed::Embedder>(
+        &self,
+        query: &str,
+        k: usize,
+        embedder: &E,
+    ) -> Result<Vec<VectorChunkHit>> {
+        if k == 0 || !table_exists(&self.conn, "vec_chunks")? {
+            return Ok(Vec::new());
+        }
+        let query_vector = embedder.embed_query(query)?;
+        if query_vector.len() != embedder.dimension() {
+            return Err(anyhow!(
+                "query embedding dimension mismatch: expected {}, got {}",
+                embedder.dimension(),
+                query_vector.len()
+            ));
+        }
+        let query_blob = crate::embed::f32s_to_vec_blob(&query_vector);
+        let mut stmt = self.conn.prepare(
+            "WITH matches AS (
+               SELECT rowid, distance
+               FROM vec_chunks
+               WHERE embedding MATCH ?1 AND k = ?2
+             )
+             SELECT c.id, c.note_id, n.title, n.type, c.text, matches.distance
+             FROM matches
+             JOIN chunk_embedding_map m ON m.rowid = matches.rowid
+             JOIN chunks c ON c.id = m.chunk_id
+             JOIN notes n ON n.id = c.note_id
+             ORDER BY matches.distance",
+        )?;
+        let rows = stmt.query_map(params![query_blob, k as i64], |r| {
+            Ok(VectorChunkHit {
+                chunk_id: r.get(0)?,
+                note_id: r.get(1)?,
+                title: r.get(2)?,
+                note_type: r.get(3)?,
+                text: r.get(4)?,
+                distance: r.get(5)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+}
+
+fn register_sqlite_vec_extension() {
+    static REGISTER: Once = Once::new();
+    REGISTER.call_once(|| unsafe {
+        type ExtensionEntry = unsafe extern "C" fn(
+            *mut rusqlite::ffi::sqlite3,
+            *mut *mut std::os::raw::c_char,
+            *const rusqlite::ffi::sqlite3_api_routines,
+        ) -> std::os::raw::c_int;
+        let entry = std::mem::transmute::<*const (), ExtensionEntry>(
+            sqlite_vec::sqlite3_vec_init as *const (),
+        );
+        rusqlite::ffi::sqlite3_auto_extension(Some(entry));
+    });
+}
+
+fn reset_vec_schema(conn: &Connection, dimension: usize) -> Result<()> {
+    conn.execute_batch(
+        "DROP TABLE IF EXISTS vec_chunks; DROP TABLE IF EXISTS chunk_embedding_map;",
+    )?;
+    conn.execute(
+        &format!(
+            "CREATE VIRTUAL TABLE vec_chunks USING vec0(embedding float[{dimension}] distance_metric=cosine)"
+        ),
+        [],
+    )?;
+    conn.execute(
+        "CREATE TABLE chunk_embedding_map (
+           rowid    INTEGER PRIMARY KEY,
+           chunk_id TEXT NOT NULL UNIQUE,
+           FOREIGN KEY(chunk_id) REFERENCES chunks(id) ON DELETE CASCADE
+         )",
+        [],
+    )?;
+    Ok(())
+}
+
+fn collect_chunks_for_embedding(conn: &Connection) -> Result<Vec<(String, String)>> {
+    let mut stmt = conn.prepare("SELECT id, text FROM chunks ORDER BY note_id, ord")?;
+    let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    let mut chunks = Vec::new();
+    for row in rows {
+        chunks.push(row?);
+    }
+    Ok(chunks)
 }
 
 fn reset_legacy_derived_schema_if_needed(conn: &Connection) -> Result<()> {
@@ -160,6 +306,8 @@ fn reset_legacy_derived_schema_if_needed(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "
         DROP TABLE IF EXISTS chunks;
+        DROP TABLE IF EXISTS vec_chunks;
+        DROP TABLE IF EXISTS chunk_embedding_map;
         DROP TABLE IF EXISTS notes_fts;
         DROP TABLE IF EXISTS edges;
         DROP TABLE IF EXISTS notes;
@@ -271,6 +419,7 @@ fn sanitize_fts_query(query: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::embed::FakeEmbedder;
     use crate::note::parse_str;
 
     #[test]
@@ -477,5 +626,29 @@ mod tests {
             })
             .unwrap();
         assert_eq!(a_count, 0);
+    }
+
+    #[test]
+    fn vector_search_finds_semantic_chunk_without_keyword_overlap() {
+        let mut idx = Index::open_in_memory().unwrap();
+        let lesson = parse_str("lesson", "수업 설계 절차").unwrap();
+        let whale = parse_str("whale", "바다 고래 관찰").unwrap();
+        idx.rebuild(&[lesson, whale]).unwrap();
+
+        let embedder = FakeEmbedder::new(3)
+            .with_passage("수업 설계 절차", vec![1.0, 0.0, 0.0])
+            .with_passage("바다 고래 관찰", vec![0.0, 1.0, 0.0])
+            .with_query("강의 준비", vec![0.95, 0.05, 0.0]);
+
+        let indexed = idx.rebuild_chunk_embeddings(&embedder).unwrap();
+        assert_eq!(indexed, 2);
+
+        let hits = idx
+            .search_vector_chunks("강의 준비", 2, &embedder)
+            .unwrap();
+        assert_eq!(hits[0].note_id, "lesson");
+        assert_eq!(hits[0].chunk_id, "lesson#0000");
+        assert!(hits[0].text.contains("수업 설계"));
+        assert!(!hits[0].text.contains("강의"));
     }
 }
