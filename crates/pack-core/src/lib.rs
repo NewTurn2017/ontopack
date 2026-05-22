@@ -1,5 +1,6 @@
 pub mod chunk;
 pub mod config;
+pub mod embed;
 pub mod index;
 pub mod note;
 pub mod pack;
