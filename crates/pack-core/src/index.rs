@@ -1,6 +1,6 @@
 use crate::note::Note;
 use anyhow::{anyhow, Result};
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension, Transaction};
 use std::path::Path;
 
 pub struct Index {
@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS notes (
   created TEXT,
   asset   TEXT,
   body    TEXT NOT NULL,
-  mtime   INTEGER NOT NULL
+  mtime   INTEGER NOT NULL,
+  hash    TEXT NOT NULL
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
   id UNINDEXED, title, body, tags
@@ -70,47 +71,51 @@ impl Index {
         tx.execute_batch(
             "DELETE FROM chunks; DELETE FROM notes; DELETE FROM notes_fts; DELETE FROM edges;",
         )?;
-        {
-            let mut ins = tx.prepare(
-                "INSERT INTO notes (id, path, type, title, tags, created, asset, body, mtime)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            )?;
-            let mut ins_fts = tx
-                .prepare("INSERT INTO notes_fts (id, title, body, tags) VALUES (?1, ?2, ?3, ?4)")?;
-            let mut ins_edge =
-                tx.prepare("INSERT OR IGNORE INTO edges (src, dst, kind) VALUES (?1, ?2, ?3)")?;
-            let mut ins_chunk =
-                tx.prepare("INSERT INTO chunks (id, note_id, ord, text) VALUES (?1, ?2, ?3, ?4)")?;
-            for n in notes {
-                let tags_json = serde_json::to_string(&n.tags)?;
-                let tags_text = n.tags.join(" ");
-                ins.execute(rusqlite::params![
-                    n.id,
-                    n.path.to_string_lossy(),
-                    n.note_type,
-                    n.title,
-                    tags_json,
-                    n.created,
-                    n.asset,
-                    n.body,
-                    n.mtime,
-                ])?;
-                ins_fts.execute(rusqlite::params![n.id, n.title, n.body, tags_text])?;
-                for chunk in crate::chunk::chunk_text(&n.id, &n.body, 900, 120) {
-                    ins_chunk.execute(rusqlite::params![
-                        chunk.id,
-                        chunk.note_id,
-                        chunk.ord,
-                        chunk.text
-                    ])?;
-                }
-                for dst in &n.related {
-                    ins_edge.execute(rusqlite::params![n.id, dst, "related"])?;
-                }
-            }
+        for note in notes {
+            insert_note_rows(&tx, note, &note.content_hash())?;
         }
         tx.commit()?;
         Ok(())
+    }
+
+    /// 변경된 노트만 파생 인덱스 행을 갱신하고, 사라진 노트 행은 제거한다.
+    pub fn rebuild_incremental(&mut self, notes: &[Note]) -> Result<BuildReport> {
+        reject_duplicate_note_ids(notes)?;
+        let tx = self.conn.transaction()?;
+        let mut report = BuildReport::default();
+
+        let incoming: std::collections::HashSet<&str> =
+            notes.iter().map(|n| n.id.as_str()).collect();
+        for id in collect_existing_note_ids(&tx)? {
+            if !incoming.contains(id.as_str()) {
+                delete_note_rows(&tx, &id)?;
+                report.removed += 1;
+            }
+        }
+
+        for note in notes {
+            let hash = note.content_hash();
+            let existing: Option<(i64, String)> = tx
+                .query_row(
+                    "SELECT mtime, hash FROM notes WHERE id = ?1",
+                    [note.id.as_str()],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()?;
+            if existing
+                .as_ref()
+                .is_some_and(|(mtime, old_hash)| *mtime == note.mtime && old_hash == &hash)
+            {
+                report.skipped += 1;
+                continue;
+            }
+            delete_note_rows(&tx, &note.id)?;
+            insert_note_rows(&tx, note, &hash)?;
+            report.indexed += 1;
+        }
+
+        tx.commit()?;
+        Ok(report)
     }
 
     /// FTS5 키워드 검색. 결과는 bm25 점수 오름차순(관련도 높은 순).
@@ -142,7 +147,62 @@ impl Index {
     }
 }
 
-/// 사용자 질의를 FTS5 MATCH에 넣기 안전하게 변환: 토큰을 "..."로 감싸 OR.
+fn collect_existing_note_ids(tx: &Transaction<'_>) -> Result<Vec<String>> {
+    let mut stmt = tx.prepare("SELECT id FROM notes")?;
+    let rows = stmt.query_map([], |r| r.get(0))?;
+    let mut ids = Vec::new();
+    for row in rows {
+        ids.push(row?);
+    }
+    Ok(ids)
+}
+
+fn delete_note_rows(tx: &Transaction<'_>, note_id: &str) -> Result<()> {
+    tx.execute("DELETE FROM chunks WHERE note_id = ?1", [note_id])?;
+    tx.execute("DELETE FROM notes_fts WHERE id = ?1", [note_id])?;
+    tx.execute("DELETE FROM edges WHERE src = ?1 OR dst = ?1", [note_id])?;
+    tx.execute("DELETE FROM notes WHERE id = ?1", [note_id])?;
+    Ok(())
+}
+
+fn insert_note_rows(tx: &Transaction<'_>, note: &Note, hash: &str) -> Result<()> {
+    let tags_json = serde_json::to_string(&note.tags)?;
+    let tags_text = note.tags.join(" ");
+    tx.execute(
+        "INSERT INTO notes (id, path, type, title, tags, created, asset, body, mtime, hash)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        rusqlite::params![
+            note.id,
+            note.path.to_string_lossy(),
+            note.note_type,
+            note.title,
+            tags_json,
+            note.created,
+            note.asset,
+            note.body,
+            note.mtime,
+            hash,
+        ],
+    )?;
+    tx.execute(
+        "INSERT INTO notes_fts (id, title, body, tags) VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![note.id, note.title, note.body, tags_text],
+    )?;
+    for chunk in crate::chunk::chunk_text(&note.id, &note.body, 900, 120) {
+        tx.execute(
+            "INSERT INTO chunks (id, note_id, ord, text) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![chunk.id, chunk.note_id, chunk.ord, chunk.text],
+        )?;
+    }
+    for dst in &note.related {
+        tx.execute(
+            "INSERT OR IGNORE INTO edges (src, dst, kind) VALUES (?1, ?2, ?3)",
+            rusqlite::params![note.id, dst, "related"],
+        )?;
+    }
+    Ok(())
+}
+
 fn reject_duplicate_note_ids(notes: &[Note]) -> Result<()> {
     let mut seen = std::collections::HashSet::new();
     for note in notes {
@@ -153,6 +213,7 @@ fn reject_duplicate_note_ids(notes: &[Note]) -> Result<()> {
     Ok(())
 }
 
+/// 사용자 질의를 FTS5 MATCH에 넣기 안전하게 변환: 토큰을 "..."로 감싸 OR.
 fn sanitize_fts_query(query: &str) -> String {
     query
         .split_whitespace()
@@ -288,5 +349,36 @@ mod tests {
             .query_row("SELECT id FROM notes", [], |r| r.get(0))
             .unwrap();
         assert_eq!(id, "a");
+    }
+
+    #[test]
+    fn incremental_rebuild_skips_unchanged_notes() {
+        let mut idx = Index::open_in_memory().unwrap();
+        let n = parse_str("a", "본문").unwrap();
+        let first = idx.rebuild_incremental(std::slice::from_ref(&n)).unwrap();
+        assert_eq!(first.indexed, 1);
+        assert_eq!(first.skipped, 0);
+
+        let second = idx.rebuild_incremental(std::slice::from_ref(&n)).unwrap();
+        assert_eq!(second.indexed, 0);
+        assert_eq!(second.skipped, 1);
+    }
+
+    #[test]
+    fn incremental_rebuild_removes_missing_notes() {
+        let mut idx = Index::open_in_memory().unwrap();
+        let a = parse_str("a", "A").unwrap();
+        let b = parse_str("b", "B").unwrap();
+        idx.rebuild_incremental(&[a]).unwrap();
+        let report = idx.rebuild_incremental(&[b]).unwrap();
+        assert_eq!(report.removed, 1);
+
+        let a_count: i64 = idx
+            .conn
+            .query_row("SELECT count(*) FROM notes WHERE id = 'a'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(a_count, 0);
     }
 }

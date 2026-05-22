@@ -121,6 +121,13 @@ impl Pack {
         Ok(notes.len())
     }
 
+    /// 현재 notes/ 상태로 증분 인덱스를 갱신한다.
+    pub fn build_index_incremental(&self) -> Result<crate::index::BuildReport> {
+        let notes = self.scan_notes()?;
+        let mut idx = Index::open(&self.index_path())?;
+        idx.rebuild_incremental(&notes)
+    }
+
     /// 현재 팩 인덱스에서 키워드 검색을 수행한다.
     pub fn search_keyword(&self, query: &str, k: usize) -> Result<Vec<NoteHit>> {
         let idx = Index::open(&self.index_path())?;
@@ -346,5 +353,18 @@ mod tests {
         assert_eq!(note.note_type, "image:still");
         assert_eq!(note.title, "a: b");
         assert_eq!(note.asset.as_deref(), Some("assets/a: b.png"));
+    }
+    #[test]
+    fn build_index_incremental_reports_skips() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(root.join("notes/a.md"), "본문").unwrap();
+        let pack = Pack::open(&root).unwrap();
+
+        let first = pack.build_index_incremental().unwrap();
+        assert_eq!(first.indexed, 1);
+        let second = pack.build_index_incremental().unwrap();
+        assert_eq!(second.skipped, 1);
     }
 }
