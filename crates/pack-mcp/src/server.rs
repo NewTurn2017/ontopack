@@ -33,6 +33,14 @@ impl McpServer {
     }
 }
 
+pub fn handle_json_line(server: &McpServer, line: &str) -> Result<Option<String>> {
+    let request: Value = serde_json::from_str(line)?;
+    let Some(response) = server.handle(request)? else {
+        return Ok(None);
+    };
+    Ok(Some(serde_json::to_string(&response)?))
+}
+
 fn initialize_result() -> Value {
     json!({
         "protocolVersion": "2024-11-05",
@@ -485,6 +493,30 @@ mod tests {
         );
         assert_eq!(result["added"]["kind"], "content");
         assert!(root.join("notes/강의 훅.md").exists());
+    }
+
+    #[test]
+    fn json_line_handler_serializes_initialize_and_skips_notifications() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        let server = McpServer::open(&root).unwrap();
+
+        let response = handle_json_line(
+            &server,
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+        )
+        .unwrap()
+        .unwrap();
+        let parsed: Value = serde_json::from_str(&response).unwrap();
+        assert_eq!(parsed["result"]["serverInfo"]["name"], "ontopack");
+
+        assert!(handle_json_line(
+            &server,
+            r#"{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}"#,
+        )
+        .unwrap()
+        .is_none());
     }
 
     fn call_tool(server: &McpServer, name: &str, arguments: Value) -> Value {

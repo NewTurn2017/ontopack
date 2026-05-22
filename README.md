@@ -29,5 +29,12 @@
 - 검색 결과는 `[keyword|vector|hybrid] 제목  (note_id / chunk_id) snippet` 형태라 MCP/뷰어 citation에 재사용 가능
 - core에서는 `SearchHit`, `RankSource`, RRF fusion, `Pack::search_hybrid_with`를 제공하며 테스트는 fake embedder로 모델 다운로드 없이 검증
 
-## 다음 (M2~)
-MCP 서버, 위키 뷰어.
+## M3
+- `pack-mcp --pack-root <팩>` — Claude/Codex용 stdio MCP 서버
+- MCP 도구: `search`, `ask`, `related`, `add`, `timeline`
+- `ask`는 LLM 답변을 코어에서 생성하지 않고 citation-ready `context_blocks`를 반환
+- `related`/`timeline`/`add` 동작은 `pack-core`가 소유하고 MCP는 얇은 JSON-RPC 어댑터로 유지
+- 설정 예시는 `docs/mcp.md` 참고
+
+## 다음 (M4~)
+로컬 위키 뷰어, 멀티모달 intake, 지식 유지보수 도구.
