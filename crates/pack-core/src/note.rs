@@ -18,6 +18,22 @@ pub struct Note {
     pub mtime: i64,
 }
 
+impl Note {
+    pub fn content_hash(&self) -> String {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.id.hash(&mut hasher);
+        self.note_type.hash(&mut hasher);
+        self.title.hash(&mut hasher);
+        self.tags.hash(&mut hasher);
+        self.created.hash(&mut hasher);
+        self.asset.hash(&mut hasher);
+        self.related.hash(&mut hasher);
+        self.body.hash(&mut hasher);
+        format!("{:016x}", hasher.finish())
+    }
+}
+
 #[derive(Debug, Default, Deserialize)]
 struct FrontMatter {
     #[serde(rename = "type")]
@@ -161,5 +177,36 @@ mod tests {
         let raw = "---\nrelated:\n  - \"[[a]]\"\n---\n본문 [[a]] 그리고 [[d]]";
         let note = parse_str("x", raw).unwrap();
         assert_eq!(note.related, vec!["a", "d"]);
+    }
+
+    #[test]
+    fn content_hash_changes_when_body_or_metadata_changes() {
+        let a = parse_str(
+            "x",
+            "---
+title: A
+---
+본문",
+        )
+        .unwrap();
+        let b = parse_str(
+            "x",
+            "---
+title: A
+---
+본문 changed",
+        )
+        .unwrap();
+        let c = parse_str(
+            "x",
+            "---
+title: B
+---
+본문",
+        )
+        .unwrap();
+        assert_ne!(a.content_hash(), b.content_hash());
+        assert_ne!(a.content_hash(), c.content_hash());
+        assert_eq!(a.content_hash(), a.content_hash());
     }
 }

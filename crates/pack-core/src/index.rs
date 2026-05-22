@@ -7,6 +7,13 @@ pub struct Index {
     conn: Connection,
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct BuildReport {
+    pub indexed: usize,
+    pub skipped: usize,
+    pub removed: usize,
+}
+
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS notes (
   id      TEXT PRIMARY KEY,
