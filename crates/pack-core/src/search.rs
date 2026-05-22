@@ -51,12 +51,7 @@ pub fn rrf_fuse(keyword_hits: &[SearchHit], vector_hits: &[SearchHit], k: usize)
     fused
 }
 
-fn add_ranked_hits(
-    fused: &mut Vec<SearchHit>,
-    hits: &[SearchHit],
-    rrf_k: f64,
-    source: RankSource,
-) {
+fn add_ranked_hits(fused: &mut Vec<SearchHit>, hits: &[SearchHit], rrf_k: f64, source: RankSource) {
     for (rank, hit) in hits.iter().enumerate() {
         let contribution = 1.0 / (rrf_k + rank as f64 + 1.0);
         if let Some(existing) = fused.iter_mut().find(|h| h.chunk_id == hit.chunk_id) {

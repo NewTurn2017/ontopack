@@ -160,6 +160,49 @@ impl Index {
         Ok(out)
     }
 
+    pub fn search_keyword_chunks(
+        &self,
+        query: &str,
+        k: usize,
+    ) -> Result<Vec<crate::search::SearchHit>> {
+        let safe = sanitize_fts_query(query);
+        if safe.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut stmt = self.conn.prepare(
+            "WITH ranked AS (
+               SELECT n.id, n.title, n.type, n.path, bm25(notes_fts) AS score
+               FROM notes_fts JOIN notes n ON n.id = notes_fts.id
+               WHERE notes_fts MATCH ?1
+               ORDER BY score
+               LIMIT ?2
+             )
+             SELECT ranked.id, c.id, ranked.title, ranked.type, c.text, ranked.path, ranked.score
+             FROM ranked
+             JOIN chunks c ON c.note_id = ranked.id
+             WHERE c.ord = 0
+             ORDER BY ranked.score",
+        )?;
+        let rows = stmt.query_map(params![safe, k as i64], |r| {
+            let score: f64 = r.get(6)?;
+            Ok(crate::search::SearchHit {
+                note_id: r.get(0)?,
+                chunk_id: r.get(1)?,
+                title: r.get(2)?,
+                note_type: r.get(3)?,
+                snippet: r.get(4)?,
+                path: r.get(5)?,
+                score: -score,
+                rank_source: crate::search::RankSource::Keyword,
+            })
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
     pub fn rebuild_chunk_embeddings<E: crate::embed::Embedder>(
         &mut self,
         embedder: &E,
@@ -648,5 +691,27 @@ mod tests {
         assert_eq!(hits[0].chunk_id, "lesson#0000");
         assert!(hits[0].text.contains("수업 설계"));
         assert!(!hits[0].text.contains("강의"));
+    }
+
+    #[test]
+    fn keyword_chunk_search_returns_citation_ready_cards() {
+        let mut idx = Index::open_in_memory().unwrap();
+        let mut note = parse_str(
+            "hook",
+            "---\ntype: prompt\ntitle: 썸네일 훅\n---\n클릭을 부르는 훅 카피.",
+        )
+        .unwrap();
+        note.path = "notes/hook.md".into();
+        idx.rebuild(&[note]).unwrap();
+
+        let hits = idx.search_keyword_chunks("훅", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].note_id, "hook");
+        assert_eq!(hits[0].chunk_id, "hook#0000");
+        assert_eq!(hits[0].title, "썸네일 훅");
+        assert_eq!(hits[0].note_type, "prompt");
+        assert_eq!(hits[0].path, "notes/hook.md");
+        assert!(hits[0].snippet.contains("클릭을 부르는 훅"));
+        assert_eq!(hits[0].rank_source, crate::search::RankSource::Keyword);
     }
 }
