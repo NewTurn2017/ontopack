@@ -242,6 +242,28 @@ fn build_no_embed_keeps_keyword_only_build_offline() {
 }
 
 #[test]
+fn embed_requires_real_embed_feature_by_default() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("p");
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", root.to_str().unwrap()])
+        .assert()
+        .success();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["embed"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("real-embed"))
+        .stderr(predicate::str::contains(
+            "cargo build --release --features real-embed",
+        ));
+}
+
+#[test]
 fn end_to_end_process_build_and_search() {
     let dir = tempdir().unwrap();
     let root = dir.path().join("p");

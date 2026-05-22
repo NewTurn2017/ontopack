@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
 use pack_core::pack::{find_pack_root, AddOutcome, Pack};
 use std::path::PathBuf;
@@ -35,6 +35,12 @@ enum Commands {
         /// 임베딩 없이 키워드/청크 인덱스만 빌드한다
         #[arg(long)]
         no_embed: bool,
+    },
+    /// 실제 임베딩 모델로 chunks 벡터 인덱스를 빌드한다
+    Embed {
+        /// 키워드/청크 인덱스 재빌드를 건너뛴다
+        #[arg(long)]
+        skip_build: bool,
     },
     /// 키워드 검색
     Search {
@@ -91,6 +97,11 @@ fn main() -> Result<()> {
                 let count = pack.build_index()?;
                 println!("인덱스 빌드 완료: 노트 {count}개");
             }
+        }
+        Commands::Embed { skip_build: _ } => {
+            bail!(
+                "pack embed는 real-embed feature로 빌드해야 합니다: cargo build --release --features real-embed"
+            );
         }
         Commands::Search { query, k } => {
             let root = find_pack_root(&std::env::current_dir()?)?;
