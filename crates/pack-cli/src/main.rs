@@ -32,6 +32,9 @@ enum Commands {
         /// 변경된 노트만 갱신한다
         #[arg(long)]
         incremental: bool,
+        /// 임베딩 없이 키워드/청크 인덱스만 빌드한다
+        #[arg(long)]
+        no_embed: bool,
     },
     /// 키워드 검색
     Search {
@@ -72,7 +75,10 @@ fn main() -> Result<()> {
             let report = pack.process_inbox()?;
             println!("인박스 처리 완료: {}개", report.processed);
         }
-        Commands::Build { incremental } => {
+        Commands::Build {
+            incremental,
+            no_embed: _,
+        } => {
             let root = find_pack_root(&std::env::current_dir()?)?;
             let pack = Pack::open(&root)?;
             if incremental {

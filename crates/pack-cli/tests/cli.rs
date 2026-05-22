@@ -222,6 +222,26 @@ fn build_incremental_reports_skips_on_second_run() {
 }
 
 #[test]
+fn build_no_embed_keeps_keyword_only_build_offline() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("p");
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", root.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::write(root.join("notes/a.md"), "본문").unwrap();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["build", "--no-embed"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("인덱스 빌드 완료"));
+}
+
+#[test]
 fn end_to_end_process_build_and_search() {
     let dir = tempdir().unwrap();
     let root = dir.path().join("p");
