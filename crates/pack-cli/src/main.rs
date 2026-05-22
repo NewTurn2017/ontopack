@@ -25,8 +25,14 @@ enum Commands {
         #[arg(long, default_value = "note")]
         r#type: String,
     },
+    /// _inbox 파일을 notes/assets로 정리한다
+    Process,
     /// 인덱스를 (재)빌드한다
-    Build,
+    Build {
+        /// 변경된 노트만 갱신한다
+        #[arg(long)]
+        incremental: bool,
+    },
     /// 키워드 검색
     Search {
         /// 검색어
@@ -60,11 +66,25 @@ fn main() -> Result<()> {
                 }
             }
         }
-        Commands::Build => {
+        Commands::Process => {
             let root = find_pack_root(&std::env::current_dir()?)?;
             let pack = Pack::open(&root)?;
-            let count = pack.build_index()?;
-            println!("인덱스 빌드 완료: 노트 {count}개");
+            let report = pack.process_inbox()?;
+            println!("인박스 처리 완료: {}개", report.processed);
+        }
+        Commands::Build { incremental } => {
+            let root = find_pack_root(&std::env::current_dir()?)?;
+            let pack = Pack::open(&root)?;
+            if incremental {
+                let report = pack.build_index_incremental()?;
+                println!(
+                    "증분 인덱스 빌드 완료: indexed={} skipped={} removed={}",
+                    report.indexed, report.skipped, report.removed
+                );
+            } else {
+                let count = pack.build_index()?;
+                println!("인덱스 빌드 완료: 노트 {count}개");
+            }
         }
         Commands::Search { query, k } => {
             let root = find_pack_root(&std::env::current_dir()?)?;

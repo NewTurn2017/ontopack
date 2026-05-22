@@ -169,3 +169,54 @@ fn end_to_end_build_and_search() {
         .stdout(predicate::str::contains("고래"))
         .stdout(predicate::str::contains("자동차").not());
 }
+
+#[test]
+fn process_imports_inbox_files() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("p");
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", root.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::write(root.join("_inbox/memo.md"), "메모").unwrap();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["process"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("처리 완료"));
+
+    assert!(root.join("notes/memo.md").exists());
+    assert!(!root.join("_inbox/memo.md").exists());
+}
+
+#[test]
+fn build_incremental_reports_skips_on_second_run() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("p");
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", root.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::write(root.join("notes/a.md"), "본문").unwrap();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["build", "--incremental"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("indexed=1"));
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["build", "--incremental"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("skipped=1"));
+}
