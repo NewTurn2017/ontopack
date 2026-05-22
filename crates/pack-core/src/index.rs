@@ -15,6 +15,7 @@ pub struct VectorChunkHit {
     pub title: String,
     pub note_type: String,
     pub text: String,
+    pub path: String,
     pub distance: f32,
 }
 
@@ -266,7 +267,7 @@ impl Index {
                FROM vec_chunks
                WHERE embedding MATCH ?1 AND k = ?2
              )
-             SELECT c.id, c.note_id, n.title, n.type, c.text, matches.distance
+             SELECT c.id, c.note_id, n.title, n.type, c.text, n.path, matches.distance
              FROM matches
              JOIN chunk_embedding_map m ON m.rowid = matches.rowid
              JOIN chunks c ON c.id = m.chunk_id
@@ -280,7 +281,8 @@ impl Index {
                 title: r.get(2)?,
                 note_type: r.get(3)?,
                 text: r.get(4)?,
-                distance: r.get(5)?,
+                path: r.get(5)?,
+                distance: r.get(6)?,
             })
         })?;
         let mut out = Vec::new();
@@ -288,6 +290,28 @@ impl Index {
             out.push(row?);
         }
         Ok(out)
+    }
+
+    pub fn search_vector_chunk_hits<E: crate::embed::Embedder>(
+        &self,
+        query: &str,
+        k: usize,
+        embedder: &E,
+    ) -> Result<Vec<crate::search::SearchHit>> {
+        Ok(self
+            .search_vector_chunks(query, k, embedder)?
+            .into_iter()
+            .map(|hit| crate::search::SearchHit {
+                note_id: hit.note_id,
+                chunk_id: hit.chunk_id,
+                title: hit.title,
+                note_type: hit.note_type,
+                snippet: hit.text,
+                path: hit.path,
+                score: 1.0 - f64::from(hit.distance),
+                rank_source: crate::search::RankSource::Vector,
+            })
+            .collect())
     }
 }
 

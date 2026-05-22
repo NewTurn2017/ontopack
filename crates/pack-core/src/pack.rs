@@ -2,7 +2,7 @@ use crate::config::PackConfig;
 use crate::index::{Index, VectorChunkHit};
 use crate::note::{self, Note};
 use crate::process::{infer_type, ProcessReport};
-use crate::search::NoteHit;
+use crate::search::{rrf_fuse, NoteHit, SearchHit};
 use anyhow::{anyhow, bail, Context, Result};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -167,6 +167,12 @@ impl Pack {
         idx.search_keyword(query, k)
     }
 
+    /// 현재 팩 인덱스에서 키워드 청크 카드를 검색한다.
+    pub fn search_keyword_chunks(&self, query: &str, k: usize) -> Result<Vec<SearchHit>> {
+        let idx = Index::open(&self.index_path())?;
+        idx.search_keyword_chunks(query, k)
+    }
+
     /// 현재 팩 인덱스에서 벡터 청크 검색을 수행한다.
     pub fn search_vector_chunks_with<E: crate::embed::Embedder>(
         &self,
@@ -176,6 +182,30 @@ impl Pack {
     ) -> Result<Vec<VectorChunkHit>> {
         let idx = Index::open(&self.index_path())?;
         idx.search_vector_chunks(query, k, embedder)
+    }
+
+    /// 현재 팩 인덱스에서 벡터 청크 카드를 검색한다.
+    pub fn search_vector_chunk_hits_with<E: crate::embed::Embedder>(
+        &self,
+        query: &str,
+        k: usize,
+        embedder: &E,
+    ) -> Result<Vec<SearchHit>> {
+        let idx = Index::open(&self.index_path())?;
+        idx.search_vector_chunk_hits(query, k, embedder)
+    }
+
+    /// 키워드와 벡터 청크 검색 결과를 RRF로 융합한다.
+    pub fn search_hybrid_with<E: crate::embed::Embedder>(
+        &self,
+        query: &str,
+        k: usize,
+        embedder: &E,
+    ) -> Result<Vec<SearchHit>> {
+        let idx = Index::open(&self.index_path())?;
+        let keyword = idx.search_keyword_chunks(query, k)?;
+        let vector = idx.search_vector_chunk_hits(query, k, embedder)?;
+        Ok(rrf_fuse(&keyword, &vector, k))
     }
 }
 
@@ -453,6 +483,36 @@ mod tests {
             .unwrap();
         assert_eq!(hits[0].note_id, "lesson");
         assert!(!hits[0].text.contains("강의"));
+    }
+
+    #[test]
+    fn pack_hybrid_search_returns_fused_chunk_cards_with_fake_embedder() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(
+            root.join("notes/lesson.md"),
+            "---\ntitle: 강의 설계\n---\n수업 설계 절차",
+        )
+        .unwrap();
+        std::fs::write(root.join("notes/whale.md"), "바다 고래 관찰").unwrap();
+        let pack = Pack::open(&root).unwrap();
+        pack.build_index().unwrap();
+
+        let embedder = FakeEmbedder::new(3)
+            .with_passage("수업 설계 절차", vec![1.0, 0.0, 0.0])
+            .with_passage("바다 고래 관찰", vec![0.0, 1.0, 0.0])
+            .with_query("강의 준비", vec![0.95, 0.05, 0.0]);
+        pack.build_chunk_embeddings_with(&embedder).unwrap();
+
+        let hits = pack.search_hybrid_with("강의 준비", 5, &embedder).unwrap();
+        assert_eq!(hits[0].note_id, "lesson");
+        assert_eq!(hits[0].chunk_id, "lesson#0000");
+        assert!(hits[0].snippet.contains("수업 설계"));
+        assert!(matches!(
+            hits[0].rank_source,
+            crate::search::RankSource::Hybrid | crate::search::RankSource::Vector
+        ));
     }
 
     #[test]
