@@ -3,6 +3,9 @@ use pack_core::pack::{AddOutcome, Pack};
 use serde_json::{json, Value};
 use std::path::Path;
 
+const SUPPORTED_PROTOCOL_VERSIONS: &[&str] =
+    &["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
+
 pub struct McpServer {
     pack: Pack,
 }
@@ -20,7 +23,7 @@ impl McpServer {
         };
         let id = request.get("id").cloned();
         match method {
-            "initialize" => Ok(Some(response(id, initialize_result()))),
+            "initialize" => Ok(Some(response(id, initialize_result(request.get("params"))))),
             "notifications/initialized" => Ok(None),
             "tools/list" => Ok(Some(response(id, json!({ "tools": tool_schemas() })))),
             "tools/call" => Ok(Some(response(id, self.call_tool(request.get("params"))))),
@@ -41,9 +44,15 @@ pub fn handle_json_line(server: &McpServer, line: &str) -> Result<Option<String>
     Ok(Some(serde_json::to_string(&response)?))
 }
 
-fn initialize_result() -> Value {
+fn initialize_result(params: Option<&Value>) -> Value {
+    let requested = params
+        .and_then(|params| params.get("protocolVersion"))
+        .and_then(Value::as_str);
+    let protocol_version = requested
+        .filter(|version| SUPPORTED_PROTOCOL_VERSIONS.contains(version))
+        .unwrap_or(SUPPORTED_PROTOCOL_VERSIONS[0]);
     json!({
-        "protocolVersion": "2024-11-05",
+        "protocolVersion": protocol_version,
         "capabilities": { "tools": {} },
         "serverInfo": { "name": "ontopack", "version": env!("CARGO_PKG_VERSION") }
     })
@@ -371,10 +380,16 @@ mod tests {
         let server = McpServer::open(&root).unwrap();
 
         let init = server
-            .handle(json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}))
+            .handle(json!({
+                "jsonrpc":"2.0",
+                "id":1,
+                "method":"initialize",
+                "params":{"protocolVersion":"2025-11-25"}
+            }))
             .unwrap()
             .unwrap();
         assert_eq!(init["result"]["serverInfo"]["name"], "ontopack");
+        assert_eq!(init["result"]["protocolVersion"], "2025-11-25");
         assert_eq!(init["result"]["capabilities"]["tools"], json!({}));
 
         let list = server
@@ -388,6 +403,25 @@ mod tests {
             .map(|tool| tool["name"].as_str().unwrap())
             .collect();
         assert_eq!(names, vec!["search", "ask", "related", "add", "timeline"]);
+    }
+
+    #[test]
+    fn initialize_falls_back_to_latest_supported_protocol_version() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        let server = McpServer::open(&root).unwrap();
+
+        let init = server
+            .handle(json!({
+                "jsonrpc":"2.0",
+                "id":1,
+                "method":"initialize",
+                "params":{"protocolVersion":"1900-01-01"}
+            }))
+            .unwrap()
+            .unwrap();
+        assert_eq!(init["result"]["protocolVersion"], "2025-11-25");
     }
 
     #[test]

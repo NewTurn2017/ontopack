@@ -65,4 +65,4 @@ printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n' \
   | cargo run -p pack-mcp -- --pack-root /tmp/ontopack-demo
 ```
 
-응답의 `serverInfo.name`이 `ontopack`이면 stdio 초기화 경로가 정상입니다.
+응답의 `serverInfo.name`이 `ontopack`이면 stdio 초기화 경로가 정상입니다. 서버는 MCP `2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05` 초기화 버전을 지원하며, 클라이언트가 지원 버전을 요청하면 같은 버전으로 응답하고 알 수 없는 버전은 최신 지원 버전으로 협상합니다.
