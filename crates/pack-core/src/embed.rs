@@ -3,6 +3,10 @@ use anyhow::anyhow;
 use anyhow::{bail, Result};
 #[cfg(test)]
 use std::collections::HashMap;
+#[cfg(feature = "real-embed")]
+use std::str::FromStr;
+#[cfg(feature = "real-embed")]
+use std::sync::Mutex;
 
 pub trait Embedder {
     fn dimension(&self) -> usize;
@@ -26,6 +30,80 @@ pub fn vec_blob_to_f32s(bytes: &[u8]) -> Result<Vec<f32>> {
         .chunks_exact(std::mem::size_of::<f32>())
         .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("chunk size checked")))
         .collect())
+}
+
+#[cfg(feature = "real-embed")]
+pub struct FastEmbedder {
+    model: Mutex<fastembed::TextEmbedding>,
+    dimension: usize,
+    batch_size: Option<usize>,
+}
+
+#[cfg(feature = "real-embed")]
+impl FastEmbedder {
+    pub fn bge_m3(dimension: usize, show_download_progress: bool) -> Result<Self> {
+        Self::try_new("bge-m3", dimension, show_download_progress)
+    }
+
+    pub fn try_new(model_name: &str, dimension: usize, show_download_progress: bool) -> Result<Self> {
+        let model_name = fastembed_model_from_name(model_name)?;
+        let options =
+            fastembed::InitOptions::new(model_name).with_show_download_progress(show_download_progress);
+        let model = fastembed::TextEmbedding::try_new(options)?;
+        Ok(Self {
+            model: Mutex::new(model),
+            dimension,
+            batch_size: None,
+        })
+    }
+
+    pub fn with_batch_size(mut self, batch_size: usize) -> Self {
+        self.batch_size = Some(batch_size);
+        self
+    }
+}
+
+#[cfg(feature = "real-embed")]
+impl Embedder for FastEmbedder {
+    fn dimension(&self) -> usize {
+        self.dimension
+    }
+
+    fn embed_passages(&self, passages: &[String]) -> Result<Vec<Vec<f32>>> {
+        let prefixed: Vec<String> = passages
+            .iter()
+            .map(|passage| format!("passage: {passage}"))
+            .collect();
+        let mut model = self
+            .model
+            .lock()
+            .map_err(|_| anyhow::anyhow!("fastembed model lock poisoned"))?;
+        Ok(model.embed(prefixed, self.batch_size)?)
+    }
+
+    fn embed_query(&self, query: &str) -> Result<Vec<f32>> {
+        let mut model = self
+            .model
+            .lock()
+            .map_err(|_| anyhow::anyhow!("fastembed model lock poisoned"))?;
+        let embeddings = model.embed([format!("query: {query}")], self.batch_size)?;
+        embeddings
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("fastembed returned no query embedding"))
+    }
+}
+
+#[cfg(feature = "real-embed")]
+pub fn fastembed_model_from_name(model_name: &str) -> Result<fastembed::EmbeddingModel> {
+    let normalized = model_name.trim();
+    if normalized.eq_ignore_ascii_case("bge-m3")
+        || normalized.eq_ignore_ascii_case("BAAI/bge-m3")
+    {
+        return Ok(fastembed::EmbeddingModel::BGEM3);
+    }
+    fastembed::EmbeddingModel::from_str(normalized)
+        .map_err(|err| anyhow::anyhow!("unsupported fastembed model '{model_name}': {err}"))
 }
 
 #[cfg(test)]
@@ -115,6 +193,19 @@ mod tests {
         assert_eq!(
             embedder.embed_query("강의 준비").unwrap(),
             vec![0.9, 0.1, 0.0]
+        );
+    }
+
+    #[cfg(feature = "real-embed")]
+    #[test]
+    fn fastembed_model_mapping_accepts_bge_m3_aliases() {
+        assert_eq!(
+            fastembed_model_from_name("bge-m3").unwrap(),
+            fastembed::EmbeddingModel::BGEM3
+        );
+        assert_eq!(
+            fastembed_model_from_name("BAAI/bge-m3").unwrap(),
+            fastembed::EmbeddingModel::BGEM3
         );
     }
 }
