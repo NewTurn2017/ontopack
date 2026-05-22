@@ -1,5 +1,5 @@
 use crate::config::PackConfig;
-use crate::index::Index;
+use crate::index::{Index, VectorChunkHit};
 use crate::note::{self, Note};
 use crate::process::{infer_type, ProcessReport};
 use crate::search::NoteHit;
@@ -152,10 +152,30 @@ impl Pack {
         idx.rebuild_incremental(&notes)
     }
 
+    /// 현재 chunks 테이블을 기준으로 청크 임베딩을 재생성한다.
+    pub fn build_chunk_embeddings_with<E: crate::embed::Embedder>(
+        &self,
+        embedder: &E,
+    ) -> Result<usize> {
+        let mut idx = Index::open(&self.index_path())?;
+        idx.rebuild_chunk_embeddings(embedder)
+    }
+
     /// 현재 팩 인덱스에서 키워드 검색을 수행한다.
     pub fn search_keyword(&self, query: &str, k: usize) -> Result<Vec<NoteHit>> {
         let idx = Index::open(&self.index_path())?;
         idx.search_keyword(query, k)
+    }
+
+    /// 현재 팩 인덱스에서 벡터 청크 검색을 수행한다.
+    pub fn search_vector_chunks_with<E: crate::embed::Embedder>(
+        &self,
+        query: &str,
+        k: usize,
+        embedder: &E,
+    ) -> Result<Vec<VectorChunkHit>> {
+        let idx = Index::open(&self.index_path())?;
+        idx.search_vector_chunks(query, k, embedder)
     }
 }
 
@@ -257,6 +277,7 @@ pub fn find_pack_root(start: &Path) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::embed::FakeEmbedder;
     use tempfile::tempdir;
 
     #[test]
@@ -408,6 +429,32 @@ mod tests {
         let second = pack.build_index_incremental().unwrap();
         assert_eq!(second.skipped, 1);
     }
+
+    #[test]
+    fn pack_builds_and_searches_chunk_embeddings_with_fake_embedder() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(root.join("notes/lesson.md"), "수업 설계 절차").unwrap();
+        std::fs::write(root.join("notes/whale.md"), "바다 고래 관찰").unwrap();
+        let pack = Pack::open(&root).unwrap();
+        pack.build_index().unwrap();
+
+        let embedder = FakeEmbedder::new(3)
+            .with_passage("수업 설계 절차", vec![1.0, 0.0, 0.0])
+            .with_passage("바다 고래 관찰", vec![0.0, 1.0, 0.0])
+            .with_query("강의 준비", vec![0.95, 0.05, 0.0]);
+
+        let indexed = pack.build_chunk_embeddings_with(&embedder).unwrap();
+        assert_eq!(indexed, 2);
+
+        let hits = pack
+            .search_vector_chunks_with("강의 준비", 1, &embedder)
+            .unwrap();
+        assert_eq!(hits[0].note_id, "lesson");
+        assert!(!hits[0].text.contains("강의"));
+    }
+
     #[test]
     fn process_inbox_imports_files_and_clears_inbox() {
         let dir = tempdir().unwrap();
