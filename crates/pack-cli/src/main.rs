@@ -1,4 +1,6 @@
-use anyhow::{bail, Result};
+#[cfg(not(feature = "real-embed"))]
+use anyhow::bail;
+use anyhow::Result;
 use clap::{Parser, Subcommand};
 use pack_core::pack::{find_pack_root, AddOutcome, Pack};
 use std::path::PathBuf;
@@ -98,10 +100,10 @@ fn main() -> Result<()> {
                 println!("인덱스 빌드 완료: 노트 {count}개");
             }
         }
-        Commands::Embed { skip_build: _ } => {
-            bail!(
-                "pack embed는 real-embed feature로 빌드해야 합니다: cargo build --release --features real-embed"
-            );
+        Commands::Embed { skip_build } => {
+            let root = find_pack_root(&std::env::current_dir()?)?;
+            let pack = Pack::open(&root)?;
+            embed_pack(&pack, skip_build)?;
         }
         Commands::Search { query, k } => {
             let root = find_pack_root(&std::env::current_dir()?)?;
@@ -116,4 +118,30 @@ fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(feature = "real-embed")]
+fn embed_pack(pack: &Pack, skip_build: bool) -> Result<()> {
+    if !skip_build {
+        let count = pack.build_index()?;
+        println!("인덱스 빌드 완료: 노트 {count}개");
+    }
+    let embedder = pack_core::embed::FastEmbedder::try_new(
+        &pack.config.embed_model,
+        pack.config.embed_dim,
+        true,
+    )?;
+    let count = pack.build_chunk_embeddings_with(&embedder)?;
+    println!(
+        "임베딩 완료: chunks={} model={} dim={}",
+        count, pack.config.embed_model, pack.config.embed_dim
+    );
+    Ok(())
+}
+
+#[cfg(not(feature = "real-embed"))]
+fn embed_pack(_pack: &Pack, _skip_build: bool) -> Result<()> {
+    bail!(
+        "pack embed는 real-embed feature로 빌드해야 합니다: cargo build --release --features real-embed"
+    )
 }

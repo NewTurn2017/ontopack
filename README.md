@@ -17,7 +17,11 @@
 - `pack build --no-embed` — 임베딩 없이 기존 키워드/청크 인덱스만 빌드
 - `pack-core::embed::Embedder` — 실제 모델과 테스트용 fake embedder를 분리하는 임베딩 인터페이스
 - `pack-core`는 `sqlite-vec` 기반 `vec_chunks` 파생 테이블에 청크 벡터를 저장하고, fake embedder fixture로 벡터 검색을 검증
-- 실제 BGE-M3 provider/model download는 `Embedder` 뒤에 붙일 다음 slice로 남겨두며, 현재 테스트/기본 CLI 경로는 모델 다운로드를 요구하지 않음
+- 실제 BGE-M3 provider는 optional feature로 분리:
+  - 기본 빌드: 모델 다운로드 없음, `pack embed`는 feature 안내 오류를 출력
+  - 실제 임베딩 빌드: `cargo build --release --features real-embed`
+  - 사용: `pack embed` 또는 기존 인덱스를 유지하려면 `pack embed --skip-build`
+  - 첫 실행은 fastembed/Hugging Face 캐시에 `BAAI/bge-m3` 모델을 내려받을 수 있음
 
 ## 다음 (M2~)
-실제 BGE-M3 provider, 하이브리드/RRF, MCP 서버, 위키 뷰어.
+하이브리드/RRF, MCP 서버, 위키 뷰어.

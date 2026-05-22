@@ -12,6 +12,10 @@ pack-core = { path = "../pack-core" }
 anyhow = { workspace = true }
 clap = { workspace = true }
 
+[features]
+default = []
+real-embed = ["pack-core/real-embed"]
+
 [dev-dependencies]
 assert_cmd = { workspace = true }
 predicates = { workspace = true }
