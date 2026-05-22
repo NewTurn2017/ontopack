@@ -643,9 +643,7 @@ mod tests {
         let indexed = idx.rebuild_chunk_embeddings(&embedder).unwrap();
         assert_eq!(indexed, 2);
 
-        let hits = idx
-            .search_vector_chunks("강의 준비", 2, &embedder)
-            .unwrap();
+        let hits = idx.search_vector_chunks("강의 준비", 2, &embedder).unwrap();
         assert_eq!(hits[0].note_id, "lesson");
         assert_eq!(hits[0].chunk_id, "lesson#0000");
         assert!(hits[0].text.contains("수업 설계"));
