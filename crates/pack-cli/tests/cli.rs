@@ -171,6 +171,57 @@ fn end_to_end_build_and_search() {
 }
 
 #[test]
+fn search_keyword_mode_prints_source_cards() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("p");
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", root.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::write(
+        root.join("notes/hook.md"),
+        "---\ntype: prompt\ntitle: 썸네일 훅\n---\n클릭을 부르는 훅 카피.",
+    )
+    .unwrap();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["build"])
+        .assert()
+        .success();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["search", "훅", "--mode", "keyword"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("[keyword]"))
+        .stdout(predicate::str::contains("hook#0000"))
+        .stdout(predicate::str::contains("클릭을 부르는 훅"));
+}
+
+#[test]
+fn search_hybrid_requires_real_embed_feature_by_default() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("p");
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", root.to_str().unwrap()])
+        .assert()
+        .success();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["search", "질문", "--mode", "hybrid"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("real-embed"));
+}
+
+#[test]
 fn process_imports_inbox_files() {
     let dir = tempdir().unwrap();
     let root = dir.path().join("p");

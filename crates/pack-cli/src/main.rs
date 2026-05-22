@@ -1,8 +1,9 @@
 #[cfg(not(feature = "real-embed"))]
 use anyhow::bail;
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use pack_core::pack::{find_pack_root, AddOutcome, Pack};
+use pack_core::search::{RankSource, SearchHit};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -51,7 +52,17 @@ enum Commands {
         /// 최대 결과 수
         #[arg(short, default_value_t = 10)]
         k: usize,
+        /// 검색 모드
+        #[arg(long, value_enum, default_value_t = SearchModeArg::Keyword)]
+        mode: SearchModeArg,
     },
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum SearchModeArg {
+    Keyword,
+    Vector,
+    Hybrid,
 }
 
 fn main() -> Result<()> {
@@ -105,19 +116,76 @@ fn main() -> Result<()> {
             let pack = Pack::open(&root)?;
             embed_pack(&pack, skip_build)?;
         }
-        Commands::Search { query, k } => {
+        Commands::Search { query, k, mode } => {
             let root = find_pack_root(&std::env::current_dir()?)?;
             let pack = Pack::open(&root)?;
-            let hits = pack.search_keyword(&query, k)?;
+            let hits = search_pack(&pack, &query, k, mode)?;
             if hits.is_empty() {
                 println!("(결과 없음)");
             }
             for h in hits {
-                println!("[{}] {}  ({})", h.note_type, h.title, h.id);
+                print_search_hit(&h);
             }
         }
     }
     Ok(())
+}
+
+fn print_search_hit(hit: &SearchHit) {
+    println!(
+        "[{}] {}  ({} / {}) {}",
+        rank_source_label(hit.rank_source),
+        hit.title,
+        hit.note_id,
+        hit.chunk_id,
+        hit.snippet.replace('\n', " ")
+    );
+}
+
+fn rank_source_label(source: RankSource) -> &'static str {
+    match source {
+        RankSource::Keyword => "keyword",
+        RankSource::Vector => "vector",
+        RankSource::Hybrid => "hybrid",
+    }
+}
+
+fn search_pack(pack: &Pack, query: &str, k: usize, mode: SearchModeArg) -> Result<Vec<SearchHit>> {
+    match mode {
+        SearchModeArg::Keyword => pack.search_keyword_chunks(query, k),
+        SearchModeArg::Vector | SearchModeArg::Hybrid => search_pack_semantic(pack, query, k, mode),
+    }
+}
+
+#[cfg(feature = "real-embed")]
+fn search_pack_semantic(
+    pack: &Pack,
+    query: &str,
+    k: usize,
+    mode: SearchModeArg,
+) -> Result<Vec<SearchHit>> {
+    let embedder = pack_core::embed::FastEmbedder::try_new(
+        &pack.config.embed_model,
+        pack.config.embed_dim,
+        true,
+    )?;
+    match mode {
+        SearchModeArg::Keyword => pack.search_keyword_chunks(query, k),
+        SearchModeArg::Vector => pack.search_vector_chunk_hits_with(query, k, &embedder),
+        SearchModeArg::Hybrid => pack.search_hybrid_with(query, k, &embedder),
+    }
+}
+
+#[cfg(not(feature = "real-embed"))]
+fn search_pack_semantic(
+    _pack: &Pack,
+    _query: &str,
+    _k: usize,
+    _mode: SearchModeArg,
+) -> Result<Vec<SearchHit>> {
+    bail!(
+        "vector/hybrid search는 real-embed feature로 빌드해야 합니다: cargo build --release --features real-embed"
+    )
 }
 
 #[cfg(feature = "real-embed")]
