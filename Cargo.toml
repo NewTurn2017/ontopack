@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+members = ["crates/pack-core", "crates/pack-cli"]
+
+[workspace.dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+rusqlite = { version = "0.32", features = ["bundled"] }
+walkdir = "2"
+regex = "1"
+clap = { version = "4", features = ["derive"] }
+toml = "0.8"
+tempfile = "3"
+assert_cmd = "2"
+predicates = "3"
