@@ -1,6 +1,7 @@
 use crate::config::PackConfig;
 use crate::index::Index;
 use crate::note::{self, Note};
+use crate::process::{infer_type, ProcessReport};
 use crate::search::NoteHit;
 use anyhow::{anyhow, bail, Context, Result};
 use serde::Serialize;
@@ -111,6 +112,29 @@ impl Pack {
                 note_path,
             })
         }
+    }
+
+    /// _inbox 바로 아래 파일을 notes/assets로 정리한다.
+    pub fn process_inbox(&self) -> Result<ProcessReport> {
+        let inbox = self.root.join("_inbox");
+        let mut report = ProcessReport::default();
+        for entry in WalkDir::new(&inbox).min_depth(1).max_depth(1) {
+            let entry = entry?;
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+            let inferred = infer_type(file_name);
+            let outcome = self.add_file(path, inferred.as_note_type())?;
+            match outcome {
+                AddOutcome::Note { path } => report.created.push(path),
+                AddOutcome::AssetWithSidecar { note_path, .. } => report.created.push(note_path),
+            }
+            std::fs::remove_file(path)?;
+            report.processed += 1;
+        }
+        Ok(report)
     }
 
     /// 현재 notes/ 상태로 전체 인덱스를 재빌드한다.
@@ -366,5 +390,23 @@ mod tests {
         assert_eq!(first.indexed, 1);
         let second = pack.build_index_incremental().unwrap();
         assert_eq!(second.skipped, 1);
+    }
+    #[test]
+    fn process_inbox_imports_files_and_clears_inbox() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(root.join("_inbox/memo.md"), "메모").unwrap();
+        std::fs::write(root.join("_inbox/pic.png"), [0x89, 0x50, 0x4e, 0x47]).unwrap();
+
+        let pack = Pack::open(&root).unwrap();
+        let report = pack.process_inbox().unwrap();
+
+        assert_eq!(report.processed, 2);
+        assert!(root.join("notes/memo.md").exists());
+        assert!(root.join("assets/pic.png").exists());
+        assert!(root.join("notes/pic.md").exists());
+        assert!(!root.join("_inbox/memo.md").exists());
+        assert!(!root.join("_inbox/pic.png").exists());
     }
 }

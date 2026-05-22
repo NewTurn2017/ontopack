@@ -3,6 +3,7 @@ pub mod config;
 pub mod index;
 pub mod note;
 pub mod pack;
+pub mod process;
 pub mod search;
 
 pub use note::Note;
