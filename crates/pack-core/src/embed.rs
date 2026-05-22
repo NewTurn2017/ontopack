@@ -45,10 +45,14 @@ impl FastEmbedder {
         Self::try_new("bge-m3", dimension, show_download_progress)
     }
 
-    pub fn try_new(model_name: &str, dimension: usize, show_download_progress: bool) -> Result<Self> {
+    pub fn try_new(
+        model_name: &str,
+        dimension: usize,
+        show_download_progress: bool,
+    ) -> Result<Self> {
         let model_name = fastembed_model_from_name(model_name)?;
-        let options =
-            fastembed::InitOptions::new(model_name).with_show_download_progress(show_download_progress);
+        let options = fastembed::InitOptions::new(model_name)
+            .with_show_download_progress(show_download_progress);
         let model = fastembed::TextEmbedding::try_new(options)?;
         Ok(Self {
             model: Mutex::new(model),
@@ -97,9 +101,7 @@ impl Embedder for FastEmbedder {
 #[cfg(feature = "real-embed")]
 pub fn fastembed_model_from_name(model_name: &str) -> Result<fastembed::EmbeddingModel> {
     let normalized = model_name.trim();
-    if normalized.eq_ignore_ascii_case("bge-m3")
-        || normalized.eq_ignore_ascii_case("BAAI/bge-m3")
-    {
+    if normalized.eq_ignore_ascii_case("bge-m3") || normalized.eq_ignore_ascii_case("BAAI/bge-m3") {
         return Ok(fastembed::EmbeddingModel::BGEM3);
     }
     fastembed::EmbeddingModel::from_str(normalized)
