@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use pack_core::pack::Pack;
+use pack_core::pack::{AddOutcome, Pack};
 use serde_json::{json, Value};
 use std::path::Path;
 
@@ -135,9 +135,9 @@ impl McpServer {
         match name {
             "search" => self.tool_search(&arguments),
             "ask" => self.tool_ask(&arguments),
-            "related" | "add" | "timeline" => {
-                tool_error(format!("tool not implemented yet: {name}"))
-            }
+            "related" => self.tool_related(&arguments),
+            "add" => self.tool_add(&arguments),
+            "timeline" => self.tool_timeline(&arguments),
             other => tool_error(format!("unknown tool: {other}")),
         }
     }
@@ -185,6 +185,99 @@ impl McpServer {
             Err(err) => tool_error(err.to_string()),
         }
     }
+
+    fn tool_related(&self, arguments: &Value) -> Value {
+        let Some(note_id) = arguments.get("note_id").and_then(Value::as_str) else {
+            return tool_error("related requires note_id");
+        };
+        let depth = arguments
+            .get("depth")
+            .and_then(Value::as_u64)
+            .and_then(|v| usize::try_from(v).ok())
+            .filter(|v| *v > 0)
+            .unwrap_or(1);
+        match self.pack.related_notes(note_id, depth) {
+            Ok(related) => tool_json(json!({
+                "note_id": note_id,
+                "depth": depth,
+                "related": related.into_iter().map(|note| json!({
+                    "id": note.id,
+                    "title": note.title,
+                    "note_type": note.note_type,
+                    "path": note.path.to_string_lossy(),
+                    "depth": note.depth
+                })).collect::<Vec<_>>()
+            })),
+            Err(err) => tool_error(err.to_string()),
+        }
+    }
+
+    fn tool_add(&self, arguments: &Value) -> Value {
+        let note_type = arguments
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or("note");
+        if let Some(content) = arguments.get("content").and_then(Value::as_str) {
+            let title = arguments
+                .get("title")
+                .and_then(Value::as_str)
+                .unwrap_or("untitled");
+            let tags = read_tags(arguments);
+            return match self
+                .pack
+                .add_content_note(title, content, note_type, tags.as_slice())
+            {
+                Ok(path) => tool_json(json!({
+                    "added": {
+                        "kind": "content",
+                        "path": path.to_string_lossy()
+                    }
+                })),
+                Err(err) => tool_error(err.to_string()),
+            };
+        }
+        if let Some(path) = arguments.get("path").and_then(Value::as_str) {
+            return match self.pack.add_file(Path::new(path), note_type) {
+                Ok(AddOutcome::Note { path }) => tool_json(json!({
+                    "added": {
+                        "kind": "note",
+                        "path": path.to_string_lossy()
+                    }
+                })),
+                Ok(AddOutcome::AssetWithSidecar {
+                    asset_path,
+                    note_path,
+                }) => tool_json(json!({
+                    "added": {
+                        "kind": "asset",
+                        "asset_path": asset_path.to_string_lossy(),
+                        "note_path": note_path.to_string_lossy()
+                    }
+                })),
+                Err(err) => tool_error(err.to_string()),
+            };
+        }
+        tool_error("add requires content or path")
+    }
+
+    fn tool_timeline(&self, arguments: &Value) -> Value {
+        let from = arguments.get("from").and_then(Value::as_str);
+        let to = arguments.get("to").and_then(Value::as_str);
+        let note_type = arguments.get("type").and_then(Value::as_str);
+        let k = read_k(arguments, 20);
+        match self.pack.timeline_notes(from, to, note_type, k) {
+            Ok(notes) => tool_json(json!({
+                "notes": notes.into_iter().map(|note| json!({
+                    "id": note.id,
+                    "title": note.title,
+                    "note_type": note.note_type,
+                    "path": note.path.to_string_lossy(),
+                    "created": note.created
+                })).collect::<Vec<_>>()
+            })),
+            Err(err) => tool_error(err.to_string()),
+        }
+    }
 }
 
 fn read_k(arguments: &Value, default: usize) -> usize {
@@ -194,6 +287,19 @@ fn read_k(arguments: &Value, default: usize) -> usize {
         .and_then(|v| usize::try_from(v).ok())
         .filter(|v| *v > 0)
         .unwrap_or(default)
+}
+
+fn read_tags(arguments: &Value) -> Vec<String> {
+    arguments
+        .get("tags")
+        .and_then(Value::as_array)
+        .map(|tags| {
+            tags.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn search_hit_json(hit: pack_core::search::SearchHit) -> Value {
@@ -322,6 +428,63 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("클릭을 부르는 훅"));
+    }
+
+    #[test]
+    fn related_tool_returns_linked_notes() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(root.join("notes/a.md"), "A [[b]]").unwrap();
+        std::fs::write(root.join("notes/b.md"), "---\ntitle: B\n---\nB").unwrap();
+        let server = McpServer::open(&root).unwrap();
+
+        let result = call_tool(&server, "related", json!({ "note_id": "a", "depth": 1 }));
+        assert_eq!(result["related"][0]["id"], "b");
+        assert_eq!(result["related"][0]["depth"], 1);
+    }
+
+    #[test]
+    fn timeline_tool_returns_filtered_notes() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(
+            root.join("notes/new.md"),
+            "---\ntype: prompt\ntitle: New\ncreated: 2026-02-01\n---\nnew",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("notes/img.md"),
+            "---\ntype: image\ntitle: Img\ncreated: 2026-03-01\n---\nimg",
+        )
+        .unwrap();
+        let server = McpServer::open(&root).unwrap();
+
+        let result = call_tool(&server, "timeline", json!({ "type": "prompt", "k": 10 }));
+        assert_eq!(result["notes"][0]["id"], "new");
+        assert_eq!(result["notes"][0]["created"], "2026-02-01");
+    }
+
+    #[test]
+    fn add_tool_adds_content_note() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        let server = McpServer::open(&root).unwrap();
+
+        let result = call_tool(
+            &server,
+            "add",
+            json!({
+                "title": "강의 훅",
+                "content": "본문",
+                "type": "prompt",
+                "tags": ["lecture"]
+            }),
+        );
+        assert_eq!(result["added"]["kind"], "content");
+        assert!(root.join("notes/강의 훅.md").exists());
     }
 
     fn call_tool(server: &McpServer, name: &str, arguments: Value) -> Value {

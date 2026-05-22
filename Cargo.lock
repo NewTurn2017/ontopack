@@ -1501,6 +1501,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "pack-mcp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "pack-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
