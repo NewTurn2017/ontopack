@@ -275,16 +275,11 @@ scripts/real-test.sh
 
 ### 4.1 HTTP APIs re-scan the filesystem too often
 
-Several viewer APIs call `pack.scan_notes()`, which walks `notes/` and parses markdown on each request:
+Status: first-pass fix implemented.
 
-- note detail
-- related
-- timeline
-- graph
-- facets
-- gallery
+The viewer APIs now prefer `.pack/index.db` rows when the index exists and fall back to source markdown scanning only for unbuilt packs. This removes repeated markdown parsing from note detail, related, timeline, graph, facets, and gallery in the normal `pack build` → `pack open` path.
 
-This is fine for MVP packs, but for a real knowledge vault it becomes wasteful. The index already has most metadata in SQLite; the server should query SQLite instead of reparsing files for every panel refresh.
+Remaining optimization: the first pass still materializes note rows from SQLite per request. M5C should batch dashboard data and later M5B refinements can add narrower SQL queries for each endpoint.
 
 ### 4.2 Viewer startup fans out multiple requests
 
@@ -344,29 +339,33 @@ Acceptance:
 
 ### M5B — Move viewer APIs onto SQLite-backed reads
 
+Status: first pass implemented.
+
 Goal: large packs stop reparsing all markdown on every viewer request.
 
 Core/index tasks:
 
-- Add index read methods:
-  - `Index::note_detail(id)` from `notes`
-  - `Index::facets()` from `notes`
-  - `Index::gallery(type, k)` from `notes WHERE asset IS NOT NULL`
-  - `Index::timeline(from, to, type, k)` from `notes`
-  - `Index::graph(type, limit)` from `notes` + `edges`
-  - `Index::related(note_id, depth)` from `edges` + `notes`
-- Keep existing filesystem methods as source-of-truth fallback or tests, but server should use index-backed methods.
+- Implemented `Index::all_notes()` and `Pack::indexed_notes_or_scan()` as the first SQLite-backed read path.
+- Server APIs now use indexed note rows when `.pack/index.db` exists:
+  - note detail
+  - related
+  - timeline
+  - graph
+  - facets
+  - gallery
+- Existing filesystem parsing remains as a fallback for brand-new packs that have not run `pack build` yet.
+- Remaining refinement: add narrower endpoint-specific SQL methods (`note_detail`, `facets`, `gallery`, `timeline`, `graph`, `related`) after dashboard batching proves the final data shape.
 
 Server tasks:
 
-- Change `pack-server::api` to call indexed methods.
-- Return a clear error if `.pack/index.db` is missing and suggest `pack build --no-embed`.
+- Changed `pack-server::api` to call the indexed read path.
+- Kept fallback scanning when `.pack/index.db` is missing to preserve first-run usability; a future stricter mode can show an explicit `pack build --no-embed` hint.
 
 Acceptance:
 
 - Existing API tests still pass.
-- New regression test proves `GET /api/gallery` works without reparsing note files after the DB is built.
-- Large synthetic pack benchmark shows meaningful improvement for facets/gallery/timeline/graph.
+- Regression tests prove note detail and gallery still work from the index after source note files are removed.
+- Large synthetic pack benchmark is still pending; use M5C dashboard batching as the next measurable speed slice.
 
 ### M5C — Add dashboard aggregate endpoint
 

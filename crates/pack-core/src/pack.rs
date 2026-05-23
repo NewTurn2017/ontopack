@@ -99,6 +99,16 @@ impl Pack {
         Ok(out)
     }
 
+    /// Viewer/API fast path: read derived note rows from SQLite when an index exists.
+    /// Falls back to source markdown scanning for brand-new packs that have not been built yet.
+    pub fn indexed_notes_or_scan(&self) -> Result<Vec<Note>> {
+        let index_path = self.index_path();
+        if index_path.exists() {
+            return Index::open(&index_path)?.all_notes();
+        }
+        self.scan_notes()
+    }
+
     /// 인덱스 DB 경로 (.pack/index.db)
     pub fn index_path(&self) -> PathBuf {
         self.root.join(".pack").join("index.db")

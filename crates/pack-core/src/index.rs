@@ -332,6 +332,48 @@ impl Index {
             })
             .collect())
     }
+
+    pub fn all_notes(&self) -> Result<Vec<Note>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, path, type, title, tags, created, asset, body, mtime
+             FROM notes
+             ORDER BY id",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            let id: String = r.get(0)?;
+            let tags_json: String = r.get(4)?;
+            let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
+            Ok(Note {
+                id,
+                path: std::path::PathBuf::from(r.get::<_, String>(1)?),
+                note_type: r.get(2)?,
+                title: r.get(3)?,
+                tags,
+                created: r.get(5)?,
+                asset: r.get(6)?,
+                related: Vec::new(),
+                body: r.get(7)?,
+                mtime: r.get(8)?,
+            })
+        })?;
+        let mut notes = Vec::new();
+        for row in rows {
+            let mut note = row?;
+            note.related = collect_related_for_note(&self.conn, &note.id)?;
+            notes.push(note);
+        }
+        Ok(notes)
+    }
+}
+
+fn collect_related_for_note(conn: &Connection, note_id: &str) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare("SELECT dst FROM edges WHERE src = ?1 ORDER BY dst")?;
+    let rows = stmt.query_map([note_id], |r| r.get(0))?;
+    let mut related = Vec::new();
+    for row in rows {
+        related.push(row?);
+    }
+    Ok(related)
 }
 
 fn keyword_filter_where_clause(
