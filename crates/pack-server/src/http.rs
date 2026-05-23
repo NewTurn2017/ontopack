@@ -1,4 +1,4 @@
-use crate::api;
+use crate::{api, viewer};
 use anyhow::{anyhow, bail, Result};
 use pack_core::pack::Pack;
 use serde::Serialize;
@@ -46,6 +46,21 @@ fn route(pack: &Pack, target: &str) -> Result<HttpResponse> {
     let (path, query) = split_target(target);
     let query = parse_query(query)?;
     match path.as_str() {
+        "/" => Ok(text_response(
+            200,
+            "text/html; charset=utf-8",
+            viewer::index_html(),
+        )),
+        "/app.js" => Ok(text_response(
+            200,
+            "application/javascript; charset=utf-8",
+            viewer::app_js(),
+        )),
+        "/style.css" => Ok(text_response(
+            200,
+            "text/css; charset=utf-8",
+            viewer::style_css(),
+        )),
         "/api/search" => json_response(api::search(
             pack,
             required_query(&query, "q")?,
@@ -85,6 +100,14 @@ fn api_result<T: Serialize>(result: Result<T>) -> Result<HttpResponse> {
         Ok(value) => json_response(value),
         Err(err) if err.to_string().contains("not found") => Ok(json_error(404, err.to_string())),
         Err(err) => Ok(json_error(500, err.to_string())),
+    }
+}
+
+fn text_response(status: u16, content_type: &'static str, body: &'static str) -> HttpResponse {
+    HttpResponse {
+        status,
+        content_type,
+        body: body.as_bytes().to_vec(),
     }
 }
 
@@ -220,5 +243,27 @@ mod tests {
         assert_eq!(response.status, 404);
         let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
         assert!(body["error"].as_str().unwrap().contains("note not found"));
+    }
+
+    #[test]
+    fn serves_static_viewer_shell() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        let pack = Pack::open(&root).unwrap();
+
+        let response = handle_request(
+            &pack,
+            "GET / HTTP/1.1
+Host: localhost
+
+",
+        )
+        .unwrap();
+        assert_eq!(response.status, 200);
+        assert_eq!(response.content_type, "text/html; charset=utf-8");
+        let html = String::from_utf8(response.body).unwrap();
+        assert!(html.contains("ontopack"));
+        assert!(html.contains("/app.js"));
     }
 }
