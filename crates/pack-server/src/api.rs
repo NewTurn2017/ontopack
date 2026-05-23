@@ -9,6 +9,15 @@ pub struct SearchResponse {
     pub hits: Vec<SearchCard>,
 }
 
+#[derive(Debug, Default, Clone, Copy)]
+pub struct SearchFilters<'a> {
+    pub note_type: Option<&'a str>,
+    pub tag: Option<&'a str>,
+    pub from: Option<&'a str>,
+    pub to: Option<&'a str>,
+    pub k: usize,
+}
+
 #[derive(Debug, Serialize, PartialEq)]
 pub struct SearchCard {
     pub note_id: String,
@@ -19,6 +28,14 @@ pub struct SearchCard {
     pub path: String,
     pub score: f64,
     pub rank_source: String,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+pub struct AskResponse {
+    pub question: String,
+    pub answer_mode: String,
+    pub instruction: String,
+    pub context_blocks: Vec<SearchCard>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -82,19 +99,76 @@ pub struct GraphEdge {
     pub to: String,
 }
 
+#[derive(Debug, Serialize, PartialEq)]
+pub struct FacetsResponse {
+    pub types: Vec<String>,
+    pub tags: Vec<String>,
+    pub created_min: Option<String>,
+    pub created_max: Option<String>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+pub struct GalleryResponse {
+    pub items: Vec<GalleryItem>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+pub struct GalleryItem {
+    pub id: String,
+    pub title: String,
+    pub note_type: String,
+    pub tags: Vec<String>,
+    pub asset: Option<String>,
+    pub path: String,
+    pub caption: String,
+}
+
 pub fn search(
     pack: &Pack,
     query: &str,
     note_type: Option<&str>,
     k: usize,
 ) -> Result<SearchResponse> {
+    search_with_filters(
+        pack,
+        query,
+        SearchFilters {
+            note_type,
+            k,
+            ..SearchFilters::default()
+        },
+    )
+}
+
+pub fn search_with_filters(
+    pack: &Pack,
+    query: &str,
+    filters: SearchFilters<'_>,
+) -> Result<SearchResponse> {
+    let k = filters.k.max(1);
+    let note_filter = note_filter_map(pack, filters)?;
     let mut hits = pack.search_keyword_chunks(query, k)?;
-    if let Some(note_type) = note_type {
-        hits.retain(|hit| hit.note_type == note_type);
+    if let Some(note_filter) = note_filter {
+        hits.retain(|hit| note_filter.contains(&hit.note_id));
     }
     Ok(SearchResponse {
         query: query.to_string(),
         hits: hits.into_iter().map(search_card).collect(),
+    })
+}
+
+pub fn ask(pack: &Pack, question: &str, k: usize) -> Result<AskResponse> {
+    Ok(AskResponse {
+        question: question.to_string(),
+        answer_mode: "external_llm_required".to_string(),
+        instruction:
+            "Use context_blocks to synthesize an answer with citations outside deterministic pack-core."
+                .to_string(),
+        context_blocks: pack
+            .search_keyword_chunks(question, k.max(1))?
+            .into_iter()
+            .map(search_card)
+            .collect(),
     })
 }
 
@@ -186,6 +260,86 @@ pub fn graph(pack: &Pack, note_type: Option<&str>, limit: usize) -> Result<Graph
     Ok(GraphResponse { nodes, edges })
 }
 
+pub fn facets(pack: &Pack) -> Result<FacetsResponse> {
+    let mut types = std::collections::BTreeSet::new();
+    let mut tags = std::collections::BTreeSet::new();
+    let mut created_values = Vec::new();
+    for note in pack.scan_notes()? {
+        types.insert(note.note_type);
+        tags.extend(note.tags);
+        if let Some(created) = note.created {
+            created_values.push(created);
+        }
+    }
+    created_values.sort();
+    Ok(FacetsResponse {
+        types: types.into_iter().collect(),
+        tags: tags.into_iter().collect(),
+        created_min: created_values.first().cloned(),
+        created_max: created_values.last().cloned(),
+    })
+}
+
+pub fn gallery(pack: &Pack, note_type: Option<&str>, k: usize) -> Result<GalleryResponse> {
+    let mut items = Vec::new();
+    for note in pack.scan_notes()? {
+        if note.asset.is_none() || note_type.is_some_and(|note_type| note.note_type != note_type) {
+            continue;
+        }
+        items.push(GalleryItem {
+            id: note.id,
+            title: note.title,
+            note_type: note.note_type,
+            tags: note.tags,
+            asset: note.asset,
+            path: note.path.to_string_lossy().to_string(),
+            caption: note.body.trim().to_string(),
+        });
+        if items.len() >= k.max(1) {
+            break;
+        }
+    }
+    Ok(GalleryResponse { items })
+}
+
+fn note_filter_map(
+    pack: &Pack,
+    filters: SearchFilters<'_>,
+) -> Result<Option<std::collections::HashSet<String>>> {
+    if filters.note_type.is_none()
+        && filters.tag.is_none()
+        && filters.from.is_none()
+        && filters.to.is_none()
+    {
+        return Ok(None);
+    }
+    let ids = pack
+        .scan_notes()?
+        .into_iter()
+        .filter(|note| {
+            filters
+                .note_type
+                .is_none_or(|note_type| note.note_type == note_type)
+        })
+        .filter(|note| {
+            filters
+                .tag
+                .is_none_or(|tag| note.tags.iter().any(|t| t == tag))
+        })
+        .filter(|note| {
+            if filters.from.is_none() && filters.to.is_none() {
+                return true;
+            }
+            note.created.as_deref().is_some_and(|created| {
+                filters.from.is_none_or(|from| created >= from)
+                    && filters.to.is_none_or(|to| created <= to)
+            })
+        })
+        .map(|note| note.id)
+        .collect();
+    Ok(Some(ids))
+}
+
 fn search_card(hit: SearchHit) -> SearchCard {
     SearchCard {
         note_id: hit.note_id,
@@ -266,5 +420,66 @@ mod tests {
         assert_eq!(graph.nodes.len(), 2);
         assert_eq!(graph.edges[0].from, "a");
         assert_eq!(graph.edges[0].to, "b");
+    }
+    #[test]
+    fn ask_api_returns_context_blocks() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(
+            root.join("notes/hook.md"),
+            "---\ntype: prompt\ntitle: 썸네일 훅\n---\n클릭을 부르는 훅 카피.",
+        )
+        .unwrap();
+        let pack = Pack::open(&root).unwrap();
+        pack.build_index().unwrap();
+
+        let response = ask(&pack, "훅 자료?", 3).unwrap();
+        assert_eq!(response.question, "훅 자료?");
+        assert_eq!(response.answer_mode, "external_llm_required");
+        assert_eq!(response.context_blocks[0].note_id, "hook");
+    }
+
+    #[test]
+    fn facets_api_returns_types_tags_and_date_range() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(
+            root.join("notes/a.md"),
+            "---\ntype: prompt\ntitle: A\ntags: [youtube, hook]\ncreated: 2026-01-01\n---\nA",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("notes/b.md"),
+            "---\ntype: image\ntitle: B\ntags: [gallery]\ncreated: 2026-03-01\n---\nB",
+        )
+        .unwrap();
+        let pack = Pack::open(&root).unwrap();
+
+        let response = facets(&pack).unwrap();
+        assert_eq!(response.types, vec!["image", "prompt"]);
+        assert_eq!(response.tags, vec!["gallery", "hook", "youtube"]);
+        assert_eq!(response.created_min.as_deref(), Some("2026-01-01"));
+        assert_eq!(response.created_max.as_deref(), Some("2026-03-01"));
+    }
+
+    #[test]
+    fn gallery_api_returns_asset_notes() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(
+            root.join("notes/pic.md"),
+            "---\ntype: image\ntitle: Pic\nasset: assets/pic.png\ntags: [gallery]\n---\n캡션",
+        )
+        .unwrap();
+        std::fs::write(root.join("notes/plain.md"), "plain").unwrap();
+        let pack = Pack::open(&root).unwrap();
+
+        let response = gallery(&pack, None, 10).unwrap();
+        assert_eq!(response.items.len(), 1);
+        assert_eq!(response.items[0].id, "pic");
+        assert_eq!(response.items[0].asset.as_deref(), Some("assets/pic.png"));
     }
 }

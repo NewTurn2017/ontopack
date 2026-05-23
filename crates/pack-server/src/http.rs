@@ -115,11 +115,27 @@ fn route(pack: &Pack, target: &str) -> Result<HttpResponse> {
             "text/css; charset=utf-8",
             viewer::style_css(),
         )),
-        "/api/search" => json_response(api::search(
+        "/api/search" => json_response(api::search_with_filters(
             pack,
             required_query(&query, "q")?,
+            api::SearchFilters {
+                note_type: query.get("type").map(String::as_str),
+                tag: query.get("tag").map(String::as_str),
+                from: query.get("from").map(String::as_str),
+                to: query.get("to").map(String::as_str),
+                k: read_usize(&query, "k", 10),
+            },
+        )?),
+        "/api/ask" => json_response(api::ask(
+            pack,
+            required_query(&query, "q")?,
+            read_usize(&query, "k", 5),
+        )?),
+        "/api/facets" => json_response(api::facets(pack)?),
+        "/api/gallery" => json_response(api::gallery(
+            pack,
             query.get("type").map(String::as_str),
-            read_usize(&query, "k", 10),
+            read_usize(&query, "k", 20),
         )?),
         "/api/timeline" => json_response(api::timeline(
             pack,
@@ -319,5 +335,47 @@ Host: localhost
         let html = String::from_utf8(response.body).unwrap();
         assert!(html.contains("ontopack"));
         assert!(html.contains("/app.js"));
+    }
+    #[test]
+    fn api_ask_http_returns_context_blocks() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(root.join("notes/hook.md"), "---\ntitle: 훅\n---\n클릭 훅").unwrap();
+        let pack = Pack::open(&root).unwrap();
+        pack.build_index().unwrap();
+
+        let response = handle_request(
+            &pack,
+            "GET /api/ask?q=%ED%9B%85&k=3 HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        )
+        .unwrap();
+        assert_eq!(response.status, 200);
+        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(body["answer_mode"], "external_llm_required");
+        assert_eq!(body["context_blocks"][0]["note_id"], "hook");
+    }
+
+    #[test]
+    fn api_gallery_http_returns_asset_cards() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(
+            root.join("notes/pic.md"),
+            "---\ntype: image\ntitle: Pic\nasset: assets/pic.png\n---\n캡션",
+        )
+        .unwrap();
+        let pack = Pack::open(&root).unwrap();
+
+        let response = handle_request(
+            &pack,
+            "GET /api/gallery?k=5 HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        )
+        .unwrap();
+        assert_eq!(response.status, 200);
+        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(body["items"][0]["id"], "pic");
+        assert_eq!(body["items"][0]["asset"], "assets/pic.png");
     }
 }
