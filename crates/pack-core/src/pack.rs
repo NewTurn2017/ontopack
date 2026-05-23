@@ -1,4 +1,5 @@
 use crate::config::PackConfig;
+use crate::enrichment::{self, EnrichmentPatch, EnrichmentStatus};
 use crate::index::{Index, VectorChunkHit};
 use crate::note::{self, Note};
 use crate::process::{infer_type, ProcessReport};
@@ -63,6 +64,31 @@ pub struct FacetValues {
     pub tags: Vec<String>,
     pub created_min: Option<String>,
     pub created_max: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PackObject {
+    pub note_id: String,
+    pub title: String,
+    pub note_type: String,
+    pub kind: String,
+    pub note_path: String,
+    pub asset_path: Option<String>,
+    pub content_hash: String,
+    pub indexed: bool,
+    pub enrichment_status: EnrichmentStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PackStatus {
+    pub total: usize,
+    pub notes: usize,
+    pub assets: usize,
+    pub indexed: usize,
+    pub pending_enrichment: usize,
+    pub done_enrichment: usize,
+    pub error_enrichment: usize,
+    pub objects: Vec<PackObject>,
 }
 
 #[derive(Serialize)]
@@ -195,6 +221,113 @@ impl Pack {
             return Index::open(&index_path)?.facets();
         }
         Ok(facets_from_notes(self.scan_notes()?))
+    }
+
+    /// Source-of-truth notes/assets를 읽어 현재 팩 객체와 enrichment 상태를 계산한다.
+    pub fn objects(&self) -> Result<Vec<PackObject>> {
+        let indexed_ids = self.indexed_note_ids()?;
+        let mut objects = self
+            .scan_notes()?
+            .into_iter()
+            .map(|note| {
+                let has_asset = note.asset.is_some();
+                PackObject {
+                    note_id: note.id.clone(),
+                    title: note.title.clone(),
+                    note_type: note.note_type.clone(),
+                    kind: object_kind(&note),
+                    note_path: relative_display(&self.root, &note.path),
+                    asset_path: note.asset.clone(),
+                    content_hash: note.content_hash(),
+                    indexed: indexed_ids.contains(&note.id),
+                    enrichment_status: enrichment::status_for_body(&note.body, has_asset),
+                }
+            })
+            .collect::<Vec<_>>();
+        objects.sort_by(|a, b| a.note_id.cmp(&b.note_id));
+        Ok(objects)
+    }
+
+    pub fn status(&self) -> Result<PackStatus> {
+        let objects = self.objects()?;
+        let assets = objects
+            .iter()
+            .filter(|object| object.asset_path.is_some())
+            .count();
+        let indexed = objects.iter().filter(|object| object.indexed).count();
+        let pending_enrichment = objects
+            .iter()
+            .filter(|object| object.enrichment_status == EnrichmentStatus::Pending)
+            .count();
+        let done_enrichment = objects
+            .iter()
+            .filter(|object| object.enrichment_status == EnrichmentStatus::Done)
+            .count();
+        let error_enrichment = objects
+            .iter()
+            .filter(|object| object.enrichment_status == EnrichmentStatus::Error)
+            .count();
+        Ok(PackStatus {
+            total: objects.len(),
+            notes: objects.len() - assets,
+            assets,
+            indexed,
+            pending_enrichment,
+            done_enrichment,
+            error_enrichment,
+            objects,
+        })
+    }
+
+    /// `.pack/objects.jsonl`은 파생 ledger이며 source-of-truth notes/assets에서 재생성 가능하다.
+    pub fn refresh_object_manifest(&self) -> Result<PathBuf> {
+        std::fs::create_dir_all(self.root.join(".pack"))?;
+        let manifest_path = self.root.join(".pack").join("objects.jsonl");
+        let objects = self.objects()?;
+        let mut body = String::new();
+        for object in objects {
+            body.push_str(&serde_json::to_string(&object)?);
+            body.push('\n');
+        }
+        let tmp = temp_sibling_path(&manifest_path);
+        if let Err(err) = std::fs::write(&tmp, body.as_bytes())
+            .and_then(|_| std::fs::rename(&tmp, &manifest_path))
+        {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(err.into());
+        }
+        Ok(manifest_path)
+    }
+
+    pub fn pending_enrichment_objects(&self) -> Result<Vec<PackObject>> {
+        Ok(self
+            .objects()?
+            .into_iter()
+            .filter(|object| object.enrichment_status == EnrichmentStatus::Pending)
+            .collect())
+    }
+
+    pub fn update_enrichment(&self, note_id: &str, patch: &EnrichmentPatch) -> Result<PathBuf> {
+        let note = self
+            .scan_notes()?
+            .into_iter()
+            .find(|note| note.id == note_id)
+            .ok_or_else(|| anyhow!("note not found: {note_id}"))?;
+        let raw = std::fs::read_to_string(&note.path)?;
+        let updated = enrichment::apply_enrichment_patch(&raw, patch)?;
+        atomic_write(&note.path, updated.as_bytes())?;
+        Ok(note.path)
+    }
+
+    fn indexed_note_ids(&self) -> Result<std::collections::HashSet<String>> {
+        if !self.index_path().exists() {
+            return Ok(std::collections::HashSet::new());
+        }
+        Ok(Index::open(&self.index_path())?
+            .all_notes()?
+            .into_iter()
+            .map(|note| note.id)
+            .collect())
     }
 
     /// 인덱스 DB 경로 (.pack/index.db)
@@ -486,6 +619,45 @@ fn facets_from_notes(notes: Vec<Note>) -> FacetValues {
         created_min: created_values.first().cloned(),
         created_max: created_values.last().cloned(),
     }
+}
+
+fn object_kind(note: &Note) -> String {
+    if note.asset.is_none() {
+        return "note".to_string();
+    }
+    match note.note_type.as_str() {
+        "image" | "video" | "audio" | "pdf" => note.note_type.clone(),
+        _ => note
+            .asset
+            .as_deref()
+            .and_then(|asset| Path::new(asset).extension())
+            .and_then(|ext| ext.to_str())
+            .map(|ext| match ext.to_ascii_lowercase().as_str() {
+                "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" => "image".to_string(),
+                "mp4" | "mov" | "mkv" | "webm" => "video".to_string(),
+                "mp3" | "wav" | "m4a" | "flac" => "audio".to_string(),
+                "pdf" => "pdf".to_string(),
+                _ => "asset".to_string(),
+            })
+            .unwrap_or_else(|| "asset".to_string()),
+    }
+}
+
+fn relative_display(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .to_string()
+}
+
+fn atomic_write(path: &Path, body: &[u8]) -> Result<()> {
+    let tmp = temp_sibling_path(path);
+    ensure_missing(&tmp)?;
+    if let Err(err) = std::fs::write(&tmp, body).and_then(|_| std::fs::rename(&tmp, path)) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(err.into());
+    }
+    Ok(())
 }
 
 fn ensure_missing(path: &Path) -> Result<()> {
@@ -909,5 +1081,91 @@ mod tests {
         assert!(root.join("notes/pic.md").exists());
         assert!(!root.join("_inbox/memo.md").exists());
         assert!(!root.join("_inbox/pic.png").exists());
+    }
+
+    #[test]
+    fn objects_report_pending_asset_enrichment_and_manifest() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        let pack = Pack::open(&root).unwrap();
+        let img = dir.path().join("pic.png");
+        std::fs::write(&img, [0x89, 0x50, 0x4e, 0x47]).unwrap();
+        pack.add_file(&img, "image").unwrap();
+        std::fs::write(root.join("notes/plain.md"), "그냥 메모").unwrap();
+        pack.build_index().unwrap();
+
+        let status = pack.status().unwrap();
+        assert_eq!(status.total, 2);
+        assert_eq!(status.assets, 1);
+        assert_eq!(status.notes, 1);
+        assert_eq!(status.indexed, 2);
+        assert_eq!(status.pending_enrichment, 1);
+        let pic = status
+            .objects
+            .iter()
+            .find(|object| object.note_id == "pic")
+            .unwrap();
+        assert_eq!(pic.kind, "image");
+        assert_eq!(pic.asset_path.as_deref(), Some("assets/pic.png"));
+        assert_eq!(pic.enrichment_status, EnrichmentStatus::Pending);
+
+        let manifest = pack.refresh_object_manifest().unwrap();
+        let manifest_body = std::fs::read_to_string(manifest).unwrap();
+        assert!(manifest_body.contains(r#""note_id":"pic""#));
+        assert!(manifest_body.contains(r#""enrichment_status":"pending""#));
+    }
+
+    #[test]
+    fn update_enrichment_preserves_human_content_and_becomes_searchable() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        let pack = Pack::open(&root).unwrap();
+        let img = dir.path().join("board.png");
+        std::fs::write(&img, [0x89, 0x50, 0x4e, 0x47]).unwrap();
+        pack.add_file(&img, "image").unwrap();
+        std::fs::write(
+            root.join("notes/board.md"),
+            "---
+type: image
+title: Board
+asset: assets/board.png
+tags: []
+---
+사람이 적은 원본 메모
+",
+        )
+        .unwrap();
+
+        let patch = EnrichmentPatch {
+            caption: Some("화이트보드에 로컬 온톨로지 그래프가 있다".to_string()),
+            tags: vec!["ontology".to_string(), "whiteboard".to_string()],
+            transcript: Some("[00:00] 로컬 지식팩 설명".to_string()),
+            provider: Some("codex".to_string()),
+            model: Some("test-double".to_string()),
+            ..EnrichmentPatch::default()
+        };
+        let note_path = pack.update_enrichment("board", &patch).unwrap();
+        let once = std::fs::read_to_string(&note_path).unwrap();
+        assert!(once.contains("사람이 적은 원본 메모"));
+        assert!(once.contains("## AI Caption"));
+        assert!(once.contains("화이트보드에 로컬 온톨로지 그래프"));
+        assert_eq!(once.matches(enrichment::ENRICHMENT_START).count(), 1);
+        pack.update_enrichment("board", &patch).unwrap();
+        let twice = std::fs::read_to_string(&note_path).unwrap();
+        assert_eq!(twice.matches(enrichment::ENRICHMENT_START).count(), 1);
+
+        let status = pack.status().unwrap();
+        let board = status
+            .objects
+            .iter()
+            .find(|object| object.note_id == "board")
+            .unwrap();
+        assert_eq!(board.enrichment_status, EnrichmentStatus::Done);
+
+        pack.build_index().unwrap();
+        let hits = pack.search_keyword_chunks("온톨로지", 5).unwrap();
+        assert_eq!(hits[0].note_id, "board");
     }
 }

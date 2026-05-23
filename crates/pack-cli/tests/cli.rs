@@ -402,3 +402,117 @@ fn open_no_browser_prints_viewer_url() {
         .success()
         .stdout(predicate::str::contains("http://127.0.0.1:"));
 }
+
+#[test]
+fn status_and_list_report_pending_enrichment() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("p");
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", root.to_str().unwrap()])
+        .assert()
+        .success();
+
+    let img = dir.path().join("pic.png");
+    std::fs::write(&img, [0x89, 0x50, 0x4e, 0x47]).unwrap();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["add", img.to_str().unwrap(), "--type", "image"])
+        .assert()
+        .success();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["build", "--no-embed"])
+        .assert()
+        .success();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("pending_enrichment=1"))
+        .stdout(predicate::str::contains("objects.jsonl"));
+    assert!(root.join(".pack/objects.jsonl").exists());
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["list", "--pending-enrichment"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("pic"))
+        .stdout(predicate::str::contains("enrichment=Pending"));
+}
+
+#[test]
+fn enrich_note_preserves_sidecar_and_makes_caption_searchable() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("p");
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", root.to_str().unwrap()])
+        .assert()
+        .success();
+
+    let img = dir.path().join("board.png");
+    std::fs::write(&img, [0x89, 0x50, 0x4e, 0x47]).unwrap();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["add", img.to_str().unwrap(), "--type", "image"])
+        .assert()
+        .success();
+    std::fs::write(root.join("transcript.txt"), "[00:00] 로컬 지식팩 설명").unwrap();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args([
+            "enrich-note",
+            "board",
+            "--caption",
+            "화이트보드에 온톨로지 그래프가 있다",
+            "--tag",
+            "ontology",
+            "--transcript",
+            "transcript.txt",
+            "--provider",
+            "codex",
+            "--model",
+            "test-double",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("enrichment 업데이트"));
+
+    let sidecar = std::fs::read_to_string(root.join("notes/board.md")).unwrap();
+    assert!(sidecar.contains("캡션을 적어주세요"));
+    assert!(sidecar.contains("## AI Caption"));
+    assert!(sidecar.contains("화이트보드에 온톨로지 그래프"));
+    assert!(sidecar.contains("[00:00] 로컬 지식팩 설명"));
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["build", "--no-embed"])
+        .assert()
+        .success();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["search", "온톨로지"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("board#0000"));
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("done_enrichment=1"));
+}

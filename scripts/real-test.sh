@@ -156,6 +156,15 @@ echo "[3/10] process inbox and build index twice"
 (cd "$PACK_DIR" && "$PACK_BIN" build --no-embed >/tmp/ontopack-real-build.out)
 (cd "$PACK_DIR" && "$PACK_BIN" build --incremental --no-embed >/tmp/ontopack-real-build-incremental.out)
 grep -q 'skipped=' /tmp/ontopack-real-build-incremental.out
+(cd "$PACK_DIR" && "$PACK_BIN" status >/tmp/ontopack-real-status-before.out)
+grep -q 'pending_enrichment=' /tmp/ontopack-real-status-before.out
+(cd "$PACK_DIR" && "$PACK_BIN" list --pending-enrichment >/tmp/ontopack-real-pending.out)
+grep -q 'demo-video' /tmp/ontopack-real-pending.out
+(cd "$PACK_DIR" && "$PACK_BIN" enrich-note demo-video --caption 'AI generated cockpit walkthrough for OntoPack retrieval' --tag enriched --provider real-test --model deterministic >/tmp/ontopack-real-enrich.out)
+grep -q 'enrichment 업데이트' /tmp/ontopack-real-enrich.out
+(cd "$PACK_DIR" && "$PACK_BIN" build --incremental --no-embed >/tmp/ontopack-real-build-enriched.out)
+(cd "$PACK_DIR" && "$PACK_BIN" status >/tmp/ontopack-real-status-after.out)
+grep -q 'done_enrichment=1' /tmp/ontopack-real-status-after.out
 
 echo "[4/10] CLI real-user keyword searches"
 CLI_ONTOLOGY="$(cd "$PACK_DIR" && "$PACK_BIN" search "온톨로지" --mode keyword -k 5)"
@@ -163,6 +172,8 @@ printf '%s\n' "$CLI_ONTOLOGY" | grep -q '\[keyword\]'
 printf '%s\n' "$CLI_ONTOLOGY" | grep -q 'lecture-outline#0000\|thumbnail-hook#0000\|evidence-image#0000'
 CLI_TRANSCRIPT="$(cd "$PACK_DIR" && "$PACK_BIN" search "모델 다운로드" --mode keyword -k 3)"
 printf '%s\n' "$CLI_TRANSCRIPT" | grep -q 'transcript#0000'
+CLI_ENRICHED="$(cd "$PACK_DIR" && "$PACK_BIN" search "cockpit" --mode keyword -k 3)"
+printf '%s\n' "$CLI_ENRICHED" | grep -q 'demo-video#0000'
 
 echo "[5/10] viewer API filtered search, including >100 distractors"
 SEARCH_JSON="$(serve_json $'GET /api/search?q=%EA%B3%B5%ED%86%B5%EC%A7%88%EB%AC%B8&type=prompt&tag=needle&from=2026-05-01&to=2026-05-31&k=1 HTTP/1.1\r\nHost: localhost\r\n\r\n')"

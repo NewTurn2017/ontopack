@@ -2,7 +2,8 @@
 use anyhow::bail;
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
-use pack_core::pack::{find_pack_root, AddOutcome, Pack};
+use pack_core::enrichment::EnrichmentPatch;
+use pack_core::pack::{find_pack_root, AddOutcome, Pack, PackObject, PackStatus};
 use pack_core::search::{RankSource, SearchHit};
 use std::path::PathBuf;
 use std::process::Command as ProcessCommand;
@@ -31,6 +32,41 @@ enum Commands {
     },
     /// _inbox 파일을 notes/assets로 정리한다
     Process,
+    /// 팩 저장/인덱스/enrichment 상태를 요약한다
+    Status {
+        /// JSON으로 출력한다
+        #[arg(long)]
+        json: bool,
+    },
+    /// 팩 객체 목록을 출력한다
+    List {
+        /// AI enrichment가 필요한 객체만 출력한다
+        #[arg(long)]
+        pending_enrichment: bool,
+        /// JSON으로 출력한다
+        #[arg(long)]
+        json: bool,
+    },
+    /// sidecar note에 안전한 AI enrichment 섹션을 쓴다
+    EnrichNote {
+        /// 업데이트할 note id
+        note_id: String,
+        /// AI caption 텍스트
+        #[arg(long)]
+        caption: Option<String>,
+        /// AI/Ontology tag. 여러 번 지정 가능
+        #[arg(long = "tag")]
+        tags: Vec<String>,
+        /// transcript 텍스트 파일 경로
+        #[arg(long)]
+        transcript: Option<PathBuf>,
+        /// enrichment provider 이름
+        #[arg(long)]
+        provider: Option<String>,
+        /// enrichment model 이름
+        #[arg(long)]
+        model: Option<String>,
+    },
     /// 인덱스를 (재)빌드한다
     Build {
         /// 변경된 노트만 갱신한다
@@ -118,6 +154,59 @@ fn main() -> Result<()> {
             let pack = Pack::open(&root)?;
             let report = pack.process_inbox()?;
             println!("인박스 처리 완료: {}개", report.processed);
+        }
+        Commands::Status { json } => {
+            let root = find_pack_root(&std::env::current_dir()?)?;
+            let pack = Pack::open(&root)?;
+            let status = pack.status()?;
+            let manifest = pack.refresh_object_manifest()?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&status)?);
+            } else {
+                print_status(&status, &manifest);
+            }
+        }
+        Commands::List {
+            pending_enrichment,
+            json,
+        } => {
+            let root = find_pack_root(&std::env::current_dir()?)?;
+            let pack = Pack::open(&root)?;
+            let objects = if pending_enrichment {
+                pack.pending_enrichment_objects()?
+            } else {
+                pack.objects()?
+            };
+            if json {
+                println!("{}", serde_json::to_string_pretty(&objects)?);
+            } else {
+                print_objects(&objects);
+            }
+        }
+        Commands::EnrichNote {
+            note_id,
+            caption,
+            tags,
+            transcript,
+            provider,
+            model,
+        } => {
+            let root = find_pack_root(&std::env::current_dir()?)?;
+            let pack = Pack::open(&root)?;
+            let transcript = match transcript {
+                Some(path) => Some(std::fs::read_to_string(path)?),
+                None => None,
+            };
+            let patch = EnrichmentPatch {
+                caption,
+                tags,
+                transcript,
+                provider,
+                model,
+                ..EnrichmentPatch::default()
+            };
+            let path = pack.update_enrichment(&note_id, &patch)?;
+            println!("enrichment 업데이트: {}", path.display());
         }
         Commands::Build {
             incremental,
@@ -211,6 +300,37 @@ fn print_search_hit(hit: &SearchHit) {
         hit.chunk_id,
         hit.snippet.replace('\n', " ")
     );
+}
+
+fn print_status(status: &PackStatus, manifest: &std::path::Path) {
+    println!(
+        "팩 상태: total={} notes={} assets={} indexed={} pending_enrichment={} done_enrichment={} error_enrichment={}",
+        status.total,
+        status.notes,
+        status.assets,
+        status.indexed,
+        status.pending_enrichment,
+        status.done_enrichment,
+        status.error_enrichment
+    );
+    println!("객체 manifest 갱신: {}", manifest.display());
+}
+
+fn print_objects(objects: &[PackObject]) {
+    if objects.is_empty() {
+        println!("(객체 없음)");
+    }
+    for object in objects {
+        println!(
+            "{} [{}] kind={} indexed={} enrichment={:?} asset={}",
+            object.note_id,
+            object.note_type,
+            object.kind,
+            object.indexed,
+            object.enrichment_status,
+            object.asset_path.as_deref().unwrap_or("-")
+        );
+    }
 }
 
 fn rank_source_label(source: RankSource) -> &'static str {

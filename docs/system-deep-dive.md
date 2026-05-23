@@ -62,6 +62,17 @@ pack build / pack build --incremental
 - `.pack/index.db`: rebuildable derived index. It should be safe to delete and rebuild.
 - `pack.toml`: pack configuration, chunk sizes, embedding defaults.
 
+### M7 storage/enrichment status model
+
+OntoPack now exposes the storage core before UI polish:
+
+- `pack status` scans source-of-truth notes/assets and refreshes `.pack/objects.jsonl`, a rebuildable derived object ledger.
+- `pack list --pending-enrichment` shows asset sidecars that still need AI caption/OCR/transcript/tag work.
+- `pack enrich-note <note_id>` writes generated caption/tags/transcript into a managed Markdown block between `<!-- ontopack:enrichment:start -->` and `<!-- ontopack:enrichment:end -->`. Human-authored sidecar text outside that block is preserved.
+- After `pack build --incremental --no-embed`, generated enrichment text is searchable through CLI, HTTP, and MCP search surfaces.
+
+This keeps original assets and Markdown notes as the durable source of truth while letting Claude/Codex/MCP or future providers act as enrichment workers.
+
 ### Current media model
 
 Images/videos already enter the pack as assets plus sidecar notes. Example:
