@@ -2,7 +2,7 @@
 """Local-only OntoPack media worker for macOS-first setup.
 
 Uses installed local tools when available:
-- Ollama vision model for image captions (`OLLAMA_MODEL`, default `gemma3`)
+- Ollama vision model for image captions (`OLLAMA_MODEL`, default `gemma4:e4b`)
 - Tesseract for OCR
 - ffprobe for video/audio metadata
 
@@ -11,10 +11,15 @@ It never calls a cloud API.
 import json
 import mimetypes
 import os
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
+
+DEFAULT_OLLAMA_MODEL = "gemma4:e4b"
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
 def fail(message: str, code: int = 2) -> None:
@@ -22,25 +27,36 @@ def fail(message: str, code: int = 2) -> None:
     raise SystemExit(code)
 
 
-def run(command: list[str], stdin: str | None = None, timeout: int = 120) -> subprocess.CompletedProcess:
+def run(command: list[str], stdin: Optional[str] = None, timeout: int = 120) -> subprocess.CompletedProcess:
     return subprocess.run(command, input=stdin, text=True, capture_output=True, timeout=timeout, check=False)
 
 
-def ollama_caption(path: str, payload: dict) -> str | None:
+def selected_ollama_model() -> str:
+    return os.environ.get("OLLAMA_MODEL") or DEFAULT_OLLAMA_MODEL
+
+
+def clean_ollama_output(text: str) -> str:
+    return ANSI_ESCAPE_RE.sub("", text).strip()
+
+
+def ollama_caption(path: str, payload: dict) -> Optional[str]:
     if not shutil.which("ollama"):
         return None
-    model = os.environ.get("OLLAMA_MODEL", "gemma3")
+    model = selected_ollama_model()
     prompt = (
         "Describe this image for a private local knowledge ontology pack. "
         "Be concise and include visible text, objects, UI, diagrams, and why it may be useful for search."
     )
-    proc = run(["ollama", "run", model, path, prompt], timeout=int(os.environ.get("OLLAMA_TIMEOUT", "180")))
+    proc = run(
+        ["ollama", "run", "--nowordwrap", "--hidethinking", "--think=false", model, path, prompt],
+        timeout=int(os.environ.get("OLLAMA_TIMEOUT", "180")),
+    )
     if proc.returncode != 0:
         fail(f"ollama vision failed: {proc.stderr.strip() or proc.stdout.strip()}", proc.returncode)
-    return proc.stdout.strip()
+    return clean_ollama_output(proc.stdout)
 
 
-def tesseract_ocr(path: str) -> str | None:
+def tesseract_ocr(path: str) -> Optional[str]:
     if not shutil.which("tesseract"):
         return None
     langs = os.environ.get("TESSERACT_LANG", "eng+kor")
@@ -51,7 +67,7 @@ def tesseract_ocr(path: str) -> str | None:
     return text or None
 
 
-def ffprobe_summary(path: str) -> str | None:
+def ffprobe_summary(path: str) -> Optional[str]:
     if not shutil.which("ffprobe"):
         return None
     proc = run(
@@ -108,7 +124,8 @@ def main() -> None:
     if not any([caption, ocr, summary]):
         fail(
             "No local enrichment tool produced output. On macOS install local dependencies, e.g. "
-            "brew install ollama tesseract ffmpeg, then `ollama pull gemma3`."
+            f"brew install ollama tesseract ffmpeg, then `ollama pull {DEFAULT_OLLAMA_MODEL}` "
+            "or set OLLAMA_MODEL to another installed vision model."
         )
 
     patch = {
@@ -117,7 +134,7 @@ def main() -> None:
         "ocr": ocr,
         "summary": summary,
         "provider": "local-media-worker",
-        "model": os.environ.get("OLLAMA_MODEL", "local-tools"),
+        "model": selected_ollama_model() if caption and "ollama-vision" in tags else "local-tools",
     }
     print(json.dumps({k: v for k, v in patch.items() if v not in (None, "")}, ensure_ascii=False))
 

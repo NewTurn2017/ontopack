@@ -20,14 +20,14 @@ For the current Mac-first path, install local media tools with Homebrew:
 
 ```bash
 brew install ollama tesseract ffmpeg
-ollama pull gemma3
+ollama pull gemma4:e4b
 ```
 
 Recommended local-only run:
 
 ```bash
 ONTOPACK_PROVIDER_MODE=local \
-  OLLAMA_MODEL=gemma3 \
+  OLLAMA_MODEL=gemma4:e4b \
   TESSERACT_LANG=eng+kor \
   pack enrich-pending --provider-command /path/to/ontopack/scripts/providers/auto_media_worker.py --limit 1
 ```
@@ -37,15 +37,30 @@ Behavior by media type:
 - image: Ollama vision caption when `ollama` is installed; Tesseract OCR when `tesseract` is installed.
 - video/audio: ffprobe metadata through `ffmpeg`; keyframe/STT extraction should be added as the next provider expansion.
 
+Verified Mac baseline on the current development machine:
+
+- Ollama `0.20.0` with `gemma4:e4b` installed. `ollama show gemma4:e4b` reports a 128K context window plus vision/audio/tools/thinking capabilities, so it is the default local caption model for the Mac path. Override with `OLLAMA_MODEL` when a stronger local model is installed.
+- Tesseract `5.5.2` with NEON support is sufficient for local OCR.
+- FFmpeg/ffprobe `8.1` with NEON/OpenCL/VideoToolbox is sufficient for local metadata extraction and future keyframe/audio extraction.
+
+Reference docs checked for the default choices:
+
+- Ollama Vision docs: <https://docs.ollama.com/capabilities/vision>
+- Ollama Gemma 4 library page: <https://ollama.com/library/gemma4>
+- OpenAI model list: <https://platform.openai.com/docs/models>
+- OpenAI GPT-5 mini model page: <https://platform.openai.com/docs/models/gpt-5-mini>
+
 ## API priority option
 
 When `OPENAI_API_KEY` is present and mode is `auto`, the router uses the API worker before local tools:
 
 ```bash
 export OPENAI_API_KEY=...
-export OPENAI_MODEL=gpt-4.1-mini
+export OPENAI_MODEL=gpt-5-mini
 pack enrich-pending --provider-command /path/to/ontopack/scripts/providers/auto_media_worker.py --limit 1
 ```
+
+`gpt-5-mini` is the default API model because the image-caption/OCR patch task is well-defined and benefits from a cost-optimized vision-capable Responses model. For maximum quality, set `OPENAI_MODEL` to a stronger current Responses vision model without changing OntoPack storage.
 
 Force local even when an API key exists:
 
@@ -91,7 +106,7 @@ Image caption/OCR/summary provider using the OpenAI Responses API with base64 im
 
 ```bash
 export OPENAI_API_KEY=...
-export OPENAI_MODEL=gpt-4.1-mini   # optional override
+export OPENAI_MODEL=gpt-5-mini   # optional override
 pack enrich-pending --provider-command /path/to/ontopack/scripts/providers/openai_vision_worker.py --limit 1
 ```
 

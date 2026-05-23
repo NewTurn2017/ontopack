@@ -4,7 +4,7 @@
 Requires:
   OPENAI_API_KEY=...
 Optional:
-  OPENAI_MODEL=gpt-4.1-mini   # override with any vision-capable Responses model
+  OPENAI_MODEL=gpt-5-mini   # override with any vision-capable Responses model
 
 stdin:  OntoPack provider payload JSON
 stdout: EnrichmentPatch JSON
@@ -19,6 +19,7 @@ import urllib.error
 import urllib.request
 
 API_URL = "https://api.openai.com/v1/responses"
+DEFAULT_OPENAI_MODEL = "gpt-5-mini"
 
 
 def fail(message: str, code: int = 2) -> None:
@@ -77,7 +78,7 @@ def main() -> None:
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         fail("OPENAI_API_KEY is required for openai_vision_worker.py; pack was not modified.")
-    model = os.environ.get("OPENAI_MODEL", "gpt-4.1-mini")
+    model = os.environ.get("OPENAI_MODEL") or DEFAULT_OPENAI_MODEL
     payload = json.load(sys.stdin)
     asset_abs_path = payload.get("asset_abs_path")
     if not asset_abs_path:
