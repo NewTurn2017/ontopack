@@ -52,6 +52,29 @@ Ontopack real test passed: realistic pack + CLI + MCP + viewer APIs + filter str
 5. `pack open --port 0 --no-browser --print-url`
 6. 필터가 `LIMIT` 전에 적용되는지 확인하는 실제형 회귀 테스트
 
+
+## 미디어 인텔리전스 실제 테스트
+
+영상 keyframe/전사 provider 경로는 별도 실제 테스트로 검증합니다. 이 테스트는 실제 mp4를 생성하고 local provider로 enrichment를 수행한 뒤, derived keyframe JPEG, CLI 검색, note/gallery API 노출까지 확인합니다.
+
+```bash
+scripts/media-intelligence-test.sh
+```
+
+성공 메시지:
+
+```text
+Ontopack media intelligence test passed: real mp4 + local provider + derived keyframes + search + API
+```
+
+Whisper 실제 전사까지 검증하려면 ggml 모델 경로를 지정해서 opt-in 실행합니다.
+
+```bash
+RUN_REAL_WHISPER=1 WHISPER_MODEL=/path/to/ggml-model.bin scripts/media-intelligence-test.sh
+```
+
+기본 경로는 ffmpeg 기반 mp4 생성/keyframe 추출만 수행하고, Whisper 모델 다운로드/경로에는 의존하지 않습니다.
+
 ## 실제 임베딩 선택 테스트
 
 BGE-M3/FastEmbed 실제 경로는 모델 다운로드와 네트워크/캐시 상태에 영향을 받으므로 기본 gate에서는 제외합니다. 실제 임베딩까지 확인하려면 명시적으로 실행합니다.
