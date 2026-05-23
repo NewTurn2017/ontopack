@@ -569,6 +569,22 @@ Host: localhost
     }
 
     #[test]
+    fn viewer_uses_compact_ops_console_layout() {
+        let html = viewer::index_html();
+        let css = viewer::style_css();
+        assert!(html.contains("vault-shell compact-ops"));
+        assert!(html.contains("LOCAL OPS CONSOLE"));
+        assert!(html.contains(r#"<span class="nav-cell">Media</span>"#));
+        assert!(css.contains(".compact-ops { --panel-max:"));
+        assert!(css.contains("grid-template-columns: minmax(360px, 1.12fr) minmax(250px, .78fr) minmax(250px, .72fr)"));
+        assert!(css.contains(".search-module { grid-column: 1 / 2; grid-row: 2 / 4; }"));
+        assert!(css.contains(".gallery-panel { grid-column: 3 / 4; grid-row: 2 / 3; }"));
+        assert!(css.contains("#gallery, #timeline, #graph, #related, #note-detail { max-height: var(--panel-max); overflow: auto;"));
+        assert!(css.contains("-webkit-line-clamp: 2"));
+        assert!(css.contains(".media-thumb { float: right; width: 88px; height: 58px;"));
+    }
+
+    #[test]
     fn api_ask_http_returns_context_blocks() {
         let dir = tempdir().unwrap();
         let root = dir.path().join("p");
