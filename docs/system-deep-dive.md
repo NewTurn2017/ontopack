@@ -303,7 +303,9 @@ Keyword search still ranks matching notes via FTS, but source cards now choose a
 
 ### 4.5 Real vector/hybrid search is CLI-first
 
-Core and CLI support vector/hybrid with `real-embed`, but server APIs are currently keyword-only. The viewer should eventually expose mode controls only when the server can honestly support them.
+Status: first-pass capability gate implemented.
+
+Core and CLI support vector/hybrid with `real-embed`, but server APIs are currently keyword-only. The viewer now calls `/api/capabilities`, enables only `keyword`, and shows vector/hybrid as locked until a future real-embed server capability exists.
 
 ## 5. Next development plan: media-visible and much faster viewer
 
@@ -419,8 +421,8 @@ Implemented index/search tasks:
 
 Remaining refinement:
 
-- Add `source: sqlite_fts | sqlite_vec | hybrid` when server-side vector/hybrid mode exists.
 - Lazy-render very large result lists if the default cap grows beyond the current viewer limits.
+- Expand `source` beyond `sqlite_fts` when server-side vector/hybrid mode exists.
 
 Acceptance:
 
@@ -430,23 +432,32 @@ Acceptance:
 
 ### M5E — Honest vector/hybrid viewer mode
 
+Status: first pass implemented.
+
 Goal: semantic search appears in UI only when available.
 
-Backend tasks:
+Implemented backend tasks:
 
-- Add `mode=keyword|vector|hybrid` to `/api/search` and `/api/ask` behind `real-embed` server build.
+- Added `/api/capabilities` with `keyword` available and `vector`/`hybrid` locked.
+- `/api/search?mode=vector|hybrid` now returns a 400 JSON error instead of silently pretending semantic search works.
+- Search responses include `mode: keyword` and `source: sqlite_fts`.
+
+Implemented viewer tasks:
+
+- Added a search mode selector populated from capabilities.
+- Disabled unavailable semantic modes with a visible locked status.
+
+Remaining backend tasks:
+
+- Add real `mode=vector|hybrid` execution behind a future `real-embed` server build.
 - Load/embedder once per server process, not per request.
-- If binary lacks `real-embed`, return capability info rather than exposing dead controls.
-
-Viewer tasks:
-
-- Show `Keyword` mode by default.
-- Show disabled `Vector/Hybrid` controls unless `/api/capabilities` reports support.
+- Enable vector/hybrid only after embeddings exist and capability checks pass.
 
 Acceptance:
 
-- Default no-download viewer remains fast and offline.
-- Real-embed viewer can search semantically after explicit build/embed setup.
+- Default no-download viewer remains fast, offline, and honest about keyword-only search.
+- Current vector/hybrid UI controls are visible but disabled with an explanation.
+- Future real-embed viewer can search semantically after explicit build/embed setup.
 
 ## 6. Recommended immediate implementation order
 

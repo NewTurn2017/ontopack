@@ -71,6 +71,7 @@ pub fn index_html() -> &'static str {
           <form id="search-form" class="control-deck">
             <label class="sr-only" for="search-input">검색어</label>
             <input id="search-input" name="q" autocomplete="off" placeholder="예: 썸네일 훅, 강의 구조, 이미지 프롬프트" autofocus>
+            <select id="mode-filter" aria-label="search mode"><option value="keyword">Keyword</option></select>
             <button type="submit" class="primary-action">검색</button>
             <select id="type-filter" aria-label="type filter"><option value="">모든 타입</option></select>
             <select id="tag-filter" aria-label="tag filter"><option value="">모든 태그</option></select>
@@ -78,6 +79,7 @@ pub fn index_html() -> &'static str {
             <input id="to-filter" type="date" aria-label="to date">
           </form>
           <p id="filter-summary" class="panel-note">FILTERS: ALL SOURCE CARDS</p>
+          <p id="mode-summary" class="panel-note">SEARCH MODE: KEYWORD · semantic disabled until server capability is available</p>
           <div id="results" class="cards source-grid"></div>
         </section>
 
@@ -271,6 +273,26 @@ function updateFilterSummary() {
   $('filter-summary').textContent = parts.length ? `FILTERS: ${parts.join(' · ')}` : 'FILTERS: ALL SOURCE CARDS';
 }
 
+function renderCapabilities(caps) {
+  const modes = caps.search_modes || [];
+  $('mode-filter').innerHTML = modes.map((mode) => {
+    const disabled = mode.available ? '' : ' disabled';
+    const label = mode.available ? mode.mode : `${mode.mode} (locked)`;
+    const reason = mode.reason ? ` title="${escapeHtml(mode.reason)}"` : '';
+    return `<option value="${escapeHtml(mode.mode)}"${disabled}${reason}>${escapeHtml(label)}</option>`;
+  }).join('');
+  $('mode-filter').value = caps.default_search_mode || 'keyword';
+  const locked = modes.filter((mode) => !mode.available).map((mode) => mode.mode).join('/');
+  $('mode-summary').textContent = caps.semantic_search
+    ? `SEARCH MODE: ${$('mode-filter').value.toUpperCase()} · semantic enabled`
+    : `SEARCH MODE: KEYWORD · ${locked || 'semantic'} locked until server capability is available`;
+}
+
+async function loadCapabilities() {
+  const caps = await fetchJson('/api/capabilities');
+  renderCapabilities(caps);
+}
+
 function setLoading(id, loading) {
   $(id).classList.toggle('is-loading', loading);
 }
@@ -323,11 +345,13 @@ async function search(q) {
   setResultCount(0, true);
   setLoading('results', true);
   const params = filterParams();
+  params.set('mode', $('mode-filter').value || 'keyword');
   params.set('q', q);
   params.set('k', '12');
   try {
     const data = await fetchJson(`/api/search?${params.toString()}`, { signal });
     $('results').innerHTML = data.hits.length ? data.hits.map(card).join('') : '<p class="muted empty-state">NO MATCHING SOURCE CARDS</p>';
+    $('mode-summary').textContent = `SEARCH MODE: ${data.mode.toUpperCase()} · ${data.source} · ${data.elapsed_ms}ms`;
     setResultCount(data.hits.length, false, data.elapsed_ms);
   } catch (error) {
     if (!isAbort(error)) throw error;
@@ -409,7 +433,7 @@ $('ask-form').addEventListener('submit', async (event) => {
   if (q) await ask(q);
 });
 
-for (const id of ['type-filter', 'tag-filter', 'from-filter', 'to-filter']) {
+for (const id of ['type-filter', 'tag-filter', 'from-filter', 'to-filter', 'mode-filter']) {
   $(id).addEventListener('change', refreshForFilters);
 }
 $('search-input').addEventListener('input', debouncedSearch);
@@ -428,7 +452,7 @@ document.body.addEventListener('keydown', async (event) => {
   await openNote(target.dataset.noteId);
 });
 
-loadDashboard().catch(console.error);
+Promise.all([loadCapabilities(), loadDashboard()]).catch(console.error);
 "#
 }
 

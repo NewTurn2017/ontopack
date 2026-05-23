@@ -9,6 +9,8 @@ const MAX_SEARCH_K: usize = 100;
 #[derive(Debug, Serialize, PartialEq)]
 pub struct SearchResponse {
     pub query: String,
+    pub mode: String,
+    pub source: String,
     pub hits: Vec<SearchCard>,
     pub elapsed_ms: u64,
 }
@@ -19,6 +21,7 @@ pub struct SearchFilters<'a> {
     pub tag: Option<&'a str>,
     pub from: Option<&'a str>,
     pub to: Option<&'a str>,
+    pub mode: Option<&'a str>,
     pub k: usize,
 }
 
@@ -157,6 +160,23 @@ pub struct GalleryItem {
     pub caption: String,
 }
 
+#[derive(Debug, Serialize, PartialEq)]
+pub struct CapabilitiesResponse {
+    pub default_search_mode: String,
+    pub semantic_search: bool,
+    pub embedding_model: String,
+    pub embedding_dim: usize,
+    pub search_modes: Vec<SearchModeCapability>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+pub struct SearchModeCapability {
+    pub mode: String,
+    pub available: bool,
+    pub source: String,
+    pub reason: Option<String>,
+}
+
 pub fn search(
     pack: &Pack,
     query: &str,
@@ -180,6 +200,7 @@ pub fn search_with_filters(
     filters: SearchFilters<'_>,
 ) -> Result<SearchResponse> {
     let started = Instant::now();
+    validate_search_mode(filters.mode)?;
     let k = filters.k.clamp(1, MAX_SEARCH_K);
     let hits = pack.search_keyword_chunks_filtered(
         query,
@@ -193,6 +214,8 @@ pub fn search_with_filters(
     )?;
     Ok(SearchResponse {
         query: query.to_string(),
+        mode: "keyword".to_string(),
+        source: "sqlite_fts".to_string(),
         hits: hits.into_iter().map(search_card).collect(),
         elapsed_ms: elapsed_ms_since(started),
     })
@@ -374,6 +397,38 @@ pub fn dashboard(pack: &Pack, filters: DashboardFilters<'_>) -> Result<Dashboard
     })
 }
 
+pub fn capabilities(pack: &Pack) -> CapabilitiesResponse {
+    let semantic_reason =
+        "pack-server is keyword-only in this build; use the CLI real-embed path for vector/hybrid search until server capabilities are expanded"
+            .to_string();
+    CapabilitiesResponse {
+        default_search_mode: "keyword".to_string(),
+        semantic_search: false,
+        embedding_model: pack.config.embed_model.clone(),
+        embedding_dim: pack.config.embed_dim,
+        search_modes: vec![
+            SearchModeCapability {
+                mode: "keyword".to_string(),
+                available: true,
+                source: "sqlite_fts".to_string(),
+                reason: None,
+            },
+            SearchModeCapability {
+                mode: "vector".to_string(),
+                available: false,
+                source: "sqlite_vec".to_string(),
+                reason: Some(semantic_reason.clone()),
+            },
+            SearchModeCapability {
+                mode: "hybrid".to_string(),
+                available: false,
+                source: "hybrid".to_string(),
+                reason: Some(semantic_reason),
+            },
+        ],
+    }
+}
+
 fn related_from_notes(
     notes: &[pack_core::note::Note],
     note_id: &str,
@@ -526,6 +581,16 @@ fn asset_url(asset: &str) -> Option<String> {
     Some(format!("/assets/{}", percent_encode_path(relative)))
 }
 
+fn validate_search_mode(mode: Option<&str>) -> Result<()> {
+    match mode.unwrap_or("keyword") {
+        "keyword" => Ok(()),
+        "vector" | "hybrid" => bail!(
+            "search mode unavailable in pack-server: vector/hybrid require a future real-embed server capability; use pack search --mode vector|hybrid with a real-embed CLI build for now"
+        ),
+        other => bail!("unknown search mode: {other}"),
+    }
+}
+
 fn elapsed_ms_since(started: Instant) -> u64 {
     started.elapsed().as_millis().try_into().unwrap_or(u64::MAX)
 }
@@ -629,6 +694,7 @@ common term",
                 from: Some("2026-01-01"),
                 to: Some("2026-12-31"),
                 k: 1,
+                ..SearchFilters::default()
             },
         )
         .unwrap();

@@ -147,7 +147,7 @@ fn route(pack: &Pack, target: &str) -> Result<HttpResponse> {
             let Ok(q) = required_query(&query, "q") else {
                 return Ok(json_error(400, "missing query parameter: q"));
             };
-            json_response(api::search_with_filters(
+            api_result(api::search_with_filters(
                 pack,
                 q,
                 api::SearchFilters {
@@ -155,9 +155,10 @@ fn route(pack: &Pack, target: &str) -> Result<HttpResponse> {
                     tag: query.get("tag").map(String::as_str),
                     from: query.get("from").map(String::as_str),
                     to: query.get("to").map(String::as_str),
+                    mode: query.get("mode").map(String::as_str),
                     k: read_usize(&query, "k", 10),
                 },
-            )?)
+            ))
         }
         "/api/ask" => {
             let Ok(q) = required_query(&query, "q") else {
@@ -165,6 +166,7 @@ fn route(pack: &Pack, target: &str) -> Result<HttpResponse> {
             };
             json_response(api::ask(pack, q, read_usize(&query, "k", 5))?)
         }
+        "/api/capabilities" => json_response(api::capabilities(pack)),
         "/api/facets" => json_response(api::facets(pack)?),
         "/api/dashboard" => json_response(api::dashboard(
             pack,
@@ -251,9 +253,14 @@ fn is_safe_relative_asset_path(path: &str) -> bool {
 fn api_result<T: Serialize>(result: Result<T>) -> Result<HttpResponse> {
     match result {
         Ok(value) => json_response(value),
+        Err(err) if is_bad_request_error(&err.to_string()) => Ok(json_error(400, err.to_string())),
         Err(err) if err.to_string().contains("not found") => Ok(json_error(404, err.to_string())),
         Err(err) => Ok(json_error(500, err.to_string())),
     }
+}
+
+fn is_bad_request_error(message: &str) -> bool {
+    message.contains("search mode unavailable") || message.contains("unknown search mode")
 }
 
 fn text_response(status: u16, content_type: &'static str, body: &'static str) -> HttpResponse {
@@ -380,7 +387,51 @@ mod tests {
         assert_eq!(response.content_type, "application/json; charset=utf-8");
         let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
         assert_eq!(body["hits"][0]["note_id"], "hook");
+        assert_eq!(body["mode"], "keyword");
+        assert_eq!(body["source"], "sqlite_fts");
         assert!(body["elapsed_ms"].is_number());
+    }
+
+    #[test]
+    fn api_search_rejects_unavailable_vector_mode() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        let pack = Pack::open(&root).unwrap();
+
+        let response = handle_request(
+            &pack,
+            "GET /api/search?q=%ED%9B%85&mode=vector HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        )
+        .unwrap();
+        assert_eq!(response.status, 400);
+        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert!(body["error"]
+            .as_str()
+            .unwrap()
+            .contains("search mode unavailable"));
+    }
+
+    #[test]
+    fn api_capabilities_reports_keyword_only_server_modes() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        let pack = Pack::open(&root).unwrap();
+
+        let response = handle_request(
+            &pack,
+            "GET /api/capabilities HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        )
+        .unwrap();
+        assert_eq!(response.status, 200);
+        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(body["default_search_mode"], "keyword");
+        assert_eq!(body["semantic_search"], false);
+        assert_eq!(body["search_modes"][0]["mode"], "keyword");
+        assert_eq!(body["search_modes"][0]["available"], true);
+        assert_eq!(body["search_modes"][1]["mode"], "vector");
+        assert_eq!(body["search_modes"][1]["available"], false);
     }
 
     #[test]
@@ -456,6 +507,7 @@ Host: localhost
         assert!(html.contains("/app.js"));
         assert!(html.contains("ask-form"));
         assert!(html.contains("type-filter"));
+        assert!(html.contains("mode-filter"));
         assert!(html.contains("gallery"));
     }
 
@@ -466,6 +518,9 @@ Host: localhost
         assert!(js.contains("async function refreshForFilters()"));
         assert!(js.contains("q ? search(q) : Promise.resolve()"));
         assert!(js.contains("loadDashboard()"));
+        assert!(js.contains("loadCapabilities()"));
+        assert!(js.contains("/api/capabilities"));
+        assert!(js.contains("mode-filter"));
         assert!(js.contains("/api/dashboard"));
         assert!(js.contains("AbortController"));
         assert!(js.contains("debouncedSearch"));
