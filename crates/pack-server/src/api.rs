@@ -174,12 +174,13 @@ pub fn graph(pack: &Pack, note_type: Option<&str>, limit: usize) -> Result<Graph
         .iter()
         .filter(|note| included.contains(&note.id))
         .flat_map(|note| {
-            note.related.iter().filter_map(|to| {
-                included.contains(to).then(|| GraphEdge {
+            note.related
+                .iter()
+                .filter(|to| included.contains(*to))
+                .map(|to| GraphEdge {
                     from: note.id.clone(),
                     to: to.clone(),
                 })
-            })
         })
         .collect();
     Ok(GraphResponse { nodes, edges })

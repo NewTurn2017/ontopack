@@ -36,5 +36,13 @@
 - `related`/`timeline`/`add` 동작은 `pack-core`가 소유하고 MCP는 얇은 JSON-RPC 어댑터로 유지
 - 설정 예시는 `docs/mcp.md` 참고
 
-## 다음 (M4~)
-로컬 위키 뷰어, 멀티모달 intake, 지식 유지보수 도구.
+## M4
+- `pack serve --port 8787` — 현재 팩을 localhost JSON API + 정적 위키 뷰어로 제공
+- `pack open` — 로컬 뷰어 URL을 브라우저로 열고 서버를 유지
+- API: `/api/search`, `/api/notes/:id`, `/api/related/:id`, `/api/timeline`, `/api/graph`
+- 뷰어: 검색 카드, 노트 상세, 관련 노트, 타임라인, lightweight graph 요약
+- 자동화 smoke: `pack serve --port 0 --once --request $'GET /api/search?q=hello HTTP/1.1\r\nHost: localhost\r\n\r\n'`
+- 자세한 사용법은 `docs/viewer.md` 참고
+
+## 다음 (M5~)
+멀티모달 intake, 지식 유지보수 도구, 배포/제품화.
