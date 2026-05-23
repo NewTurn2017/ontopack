@@ -1,4 +1,5 @@
 use anyhow::{bail, Result};
+use pack_core::enrichment::{ENRICHMENT_END, ENRICHMENT_START};
 use pack_core::pack::Pack;
 use pack_core::search::{RankSource, SearchFilters as CoreSearchFilters, SearchHit};
 use serde::Serialize;
@@ -62,8 +63,17 @@ pub struct NoteDetail {
     pub media_kind: Option<String>,
     pub mime: Option<String>,
     pub related: Vec<String>,
+    pub keyframes: Vec<MediaKeyframe>,
     pub body: String,
     pub path: String,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+pub struct MediaKeyframe {
+    pub time: String,
+    pub text: String,
+    pub asset: Option<String>,
+    pub asset_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -158,6 +168,7 @@ pub struct GalleryItem {
     pub mime: Option<String>,
     pub path: String,
     pub caption: String,
+    pub keyframes: Vec<MediaKeyframe>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -245,6 +256,7 @@ pub fn note(pack: &Pack, id: &str) -> Result<NoteDetail> {
         bail!("note not found: {id}");
     };
     let media = media_metadata(note.asset.as_deref());
+    let keyframes = parse_keyframes(&note.body);
     Ok(NoteDetail {
         id: note.id,
         title: note.title,
@@ -256,6 +268,7 @@ pub fn note(pack: &Pack, id: &str) -> Result<NoteDetail> {
         media_kind: media.media_kind,
         mime: media.mime,
         related: note.related,
+        keyframes,
         body: note.body,
         path: note.path.to_string_lossy().to_string(),
     })
@@ -343,6 +356,7 @@ pub fn gallery(pack: &Pack, note_type: Option<&str>, k: usize) -> Result<Gallery
             media_kind: media.media_kind,
             mime: media.mime,
             path: note.path.to_string_lossy().to_string(),
+            keyframes: parse_keyframes(&note.body),
             caption: note.body.trim().to_string(),
         });
     }
@@ -436,6 +450,54 @@ fn media_metadata(asset: Option<&str>) -> MediaMetadata {
         media_kind: Some(media_kind_for_mime(&mime).to_string()),
         mime: Some(mime),
     }
+}
+
+fn parse_keyframes(body: &str) -> Vec<MediaKeyframe> {
+    let block = body
+        .find(ENRICHMENT_START)
+        .and_then(|start| {
+            let after_start = start + ENRICHMENT_START.len();
+            body[after_start..]
+                .find(ENRICHMENT_END)
+                .map(|end_rel| &body[after_start..after_start + end_rel])
+        })
+        .unwrap_or(body);
+
+    let mut in_keyframes = false;
+    let mut frames = Vec::new();
+    for line in block.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("## ") {
+            in_keyframes = trimmed == "## Keyframes";
+            continue;
+        }
+        if !in_keyframes {
+            continue;
+        }
+        let Some(frame) = parse_keyframe_line(trimmed) else {
+            continue;
+        };
+        frames.push(frame);
+    }
+    frames
+}
+
+fn parse_keyframe_line(line: &str) -> Option<MediaKeyframe> {
+    let line = line.strip_prefix("- [")?;
+    let (time, rest) = line.split_once("] ")?;
+    let (text, asset) = if let Some((text, asset_part)) = rest.rsplit_once(" — `") {
+        let asset = asset_part.strip_suffix('`')?.to_string();
+        (text.to_string(), Some(asset))
+    } else {
+        (rest.to_string(), None)
+    };
+    let asset_url = asset.as_deref().and_then(asset_url);
+    Some(MediaKeyframe {
+        time: time.to_string(),
+        text,
+        asset,
+        asset_url,
+    })
 }
 
 pub fn mime_for_asset(asset: &str) -> &'static str {
@@ -732,6 +794,50 @@ asset: assets/demo clip.mp4
         );
         assert_eq!(response.media_kind.as_deref(), Some("video"));
         assert_eq!(response.mime.as_deref(), Some("video/mp4"));
+    }
+
+    #[test]
+    fn note_api_returns_enrichment_keyframe_assets() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(
+            root.join("notes/clip.md"),
+            "---
+type: video
+title: Demo Clip
+asset: assets/demo.mp4
+---
+영상 캡션
+
+<!-- ontopack:enrichment:start -->
+## AI Caption
+영상 캡션
+
+## Keyframes
+- [00:00:00] Representative video frame extracted at 00:00:00. — `assets/.derived/clip/keyframe-0000.jpg`
+- [00:00:04] Candidate without asset
+
+## Enrichment Metadata
+status: done
+<!-- ontopack:enrichment:end -->
+",
+        )
+        .unwrap();
+        let pack = Pack::open(&root).unwrap();
+
+        let response = note(&pack, "clip").unwrap();
+        assert_eq!(response.keyframes.len(), 2);
+        assert_eq!(response.keyframes[0].time, "00:00:00");
+        assert_eq!(
+            response.keyframes[0].asset.as_deref(),
+            Some("assets/.derived/clip/keyframe-0000.jpg")
+        );
+        assert_eq!(
+            response.keyframes[0].asset_url.as_deref(),
+            Some("/assets/.derived/clip/keyframe-0000.jpg")
+        );
+        assert_eq!(response.keyframes[1].asset_url, None);
     }
 
     #[test]

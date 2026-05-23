@@ -564,8 +564,11 @@ Host: localhost
         assert!(js.contains("loading=\"lazy\""));
         assert!(js.contains("preload=\"metadata\""));
         assert!(js.contains("function galleryCard"));
+        assert!(js.contains("function keyframeStrip"));
+        assert!(js.contains("frame.asset_url"));
         assert!(css.contains(".media-preview"));
         assert!(css.contains(".gallery-card video"));
+        assert!(css.contains(".keyframe-strip"));
     }
 
     #[test]

@@ -91,7 +91,7 @@ created: 2026-05-21
 Whiteboard caption searchable by keyword.
 ```
 
-The viewer now serves local `assets/` files through safe `/assets/<path>` URLs and can render image/video sidecars in gallery cards and selected-note previews. The local provider can also write derived keyframe JPEGs under `assets/.derived/<note-id>/` and reference them from the enrichment keyframes block; richer timeline UI over those frames remains future work.
+The viewer now serves local `assets/` files through safe `/assets/<path>` URLs and can render image/video sidecars in gallery cards and selected-note previews. The local provider can write derived keyframe JPEGs under `assets/.derived/<note-id>/`; `/api/notes/:id` and gallery responses expose those frames as `keyframes[]`, and the viewer renders them as a compact keyframe strip. Richer seek/scrub timeline behavior remains future work.
 
 ## 3. Detailed execution guide
 

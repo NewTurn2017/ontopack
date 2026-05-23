@@ -240,11 +240,31 @@ function card(hit) {
 function galleryCard(item) {
   return `<article class="card gallery-card" data-note-id="${escapeHtml(item.id)}" role="button" tabindex="0">
     ${mediaMarkup(item, 'gallery', item.media_kind === 'video' || item.media_kind === 'audio')}
+    ${keyframeStrip(item, false)}
     <span class="card-kicker">${escapeHtml(item.note_type)}</span>
     <strong>${escapeHtml(item.title)}</strong>
     <span class="meta-line">${escapeHtml(item.asset || '')}</span>
     <p>${escapeHtml(item.caption || '')}</p>
   </article>`;
+}
+
+function keyframeStrip(item, interactive = true) {
+  const frames = (item && item.keyframes || []).filter((frame) => frame && (frame.asset_url || frame.text));
+  if (!frames.length) return '';
+  const cards = frames.slice(0, 6).map((frame) => {
+    const time = escapeHtml(frame.time || '');
+    const label = escapeHtml(frame.text || 'keyframe');
+    const src = frame.asset_url ? escapeHtml(frame.asset_url) : '';
+    const media = src
+      ? `<img src="${src}" alt="${label}" loading="lazy" decoding="async">`
+      : `<span class="keyframe-token">FRAME</span>`;
+    return `<figure class="keyframe-card" title="${label}">
+      ${media}
+      <figcaption>${time}</figcaption>
+    </figure>`;
+  }).join('');
+  const heading = interactive ? '<p class="meta keyframe-heading">KEYFRAMES</p>' : '';
+  return `<div class="keyframe-strip" aria-label="video keyframes">${heading}${cards}</div>`;
 }
 
 function filterParams() {
@@ -380,6 +400,7 @@ async function openNote(id) {
   const note = await fetchJson(`/api/notes/${encodeURIComponent(id)}`);
   $('note-detail').classList.remove('muted');
   $('note-detail').innerHTML = `${mediaMarkup(note, 'large', true)}
+    ${keyframeStrip(note, true)}
     <h3>${escapeHtml(note.title)}</h3>
     <p class="meta">${escapeHtml(note.note_type)} · ${escapeHtml(note.created || 'no date')} · ${escapeHtml(note.tags.join(', '))}</p>
     <pre>${escapeHtml(note.body)}</pre>`;
@@ -733,6 +754,48 @@ input::placeholder { color: rgba(216,229,224,.45); }
 }
 .gallery-card { cursor: pointer; }
 .gallery-card video { cursor: auto; }
+.keyframe-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  gap: 7px;
+  margin: 8px 0 10px;
+}
+.keyframe-heading { grid-column: 1 / -1; margin: 0; color: var(--green); letter-spacing: .14em; }
+.keyframe-card {
+  position: relative;
+  overflow: hidden;
+  margin: 0;
+  min-height: 54px;
+  border: 1px solid rgba(0,249,154,.16);
+  border-radius: 10px;
+  background: rgba(0,0,0,.34);
+}
+.keyframe-card img {
+  display: block;
+  width: 100%;
+  height: 62px;
+  object-fit: cover;
+  filter: saturate(.92) contrast(1.08);
+}
+.keyframe-card figcaption {
+  position: absolute;
+  left: 5px;
+  bottom: 4px;
+  padding: 2px 5px;
+  border-radius: 999px;
+  color: #04130f;
+  background: rgba(0,249,154,.82);
+  font: 10px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-weight: 800;
+}
+.keyframe-token {
+  display: grid;
+  place-items: center;
+  min-height: 62px;
+  color: var(--green);
+  font-size: 11px;
+  letter-spacing: .13em;
+}
 .terminal-output { min-height: 74px; max-height: 220px; overflow: auto; }
 .terminal-line { color: var(--green); }
 .note-detail h3 { margin: 0 0 6px; color: #fff; }
