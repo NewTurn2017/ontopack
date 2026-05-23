@@ -11,6 +11,7 @@
   - User-provided visual reference: mechanical lock UI, industrial cyberpunk, secure knowledge vault, neo terminal, dark metal + green phosphor, AI archive/private intelligence console
   - Current viewer implementation: `crates/pack-server/src/viewer.rs`
   - Current viewer docs: `docs/viewer.md`
+  - System/run/performance plan: `docs/system-deep-dive.md`
   - Browser QA evidence: `docs/test-results/2026-05-23-browser-qa.md`, `output/playwright/ontopack-browser-qa-20260523.png`
 
 ## Brand
@@ -40,7 +41,9 @@
 - Success signals:
   - A new user can identify the app as a secure local archive within 5 seconds.
   - Search/filter/Ask flows still pass browser QA with zero console errors.
-  - UI communicates source cards, local pack stats, and selected-note context clearly.
+  - UI communicates source cards, local pack stats, selected-note context, and visible media previews clearly.
+  - Images/videos added as asset sidecars are visible in the viewer, not only represented as metadata cards.
+  - Viewer startup and filter/search interactions feel instant on realistic packs by using indexed reads and avoiding repeated markdown scans.
   - Visual richness comes from CSS tokens/panels/components, not brittle static artwork.
 
 ## Personas and jobs
@@ -117,6 +120,8 @@
   - Ask context cards.
   - Note detail, related cards, gallery, timeline, graph panels.
 - New/changed components:
+  - `media-preview`: local image/video preview for asset sidecars, with large selected-record preview and compact card thumbnails.
+  - `media-bay`: gallery module that shows actual images/videos instead of metadata-only cards.
   - `app-shell`: dark vault background and dashboard layout.
   - `top-rail`: mechanical nav/status rail.
   - `brand-lockup`: OntoPack mark + local/private tagline.
@@ -200,6 +205,9 @@
   - Keep CSS lightweight.
   - Avoid large animated backgrounds.
   - Keep API calls bounded and browser-concurrency-safe.
+  - Prefer SQLite-backed API reads over reparsing `notes/` on every viewer request.
+  - Batch dashboard startup data where possible and cancel stale browser requests.
+  - Media previews must be lazy-loaded (`loading=lazy`, video `preload=metadata`) and served only from the local pack `assets/` directory.
 - Compatibility constraints:
   - Local Chromium/Safari/Firefox basics.
   - No remote CDN dependency.

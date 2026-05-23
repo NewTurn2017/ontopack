@@ -4,6 +4,7 @@
 
 ## 빠른 MVP 검증
 
+- 시스템 동작 원리, 상세 실행 방법, 미디어/성능 다음 계획은 `docs/system-deep-dive.md`를 참고하세요.
 - 새 사용자는 `docs/mvp.md`의 5분 runbook으로 init → process/build → search → MCP → viewer를 확인할 수 있습니다.
 - 전체 자동 smoke: `scripts/mvp-smoke.sh` (임시 팩으로 CLI + MCP + viewer API + `pack open --no-browser` 검증)
 - 실제형 테스트: `scripts/real-test.sh` (강의/자료 pack + 필터 스트레스 + MCP/viewer API + optional real-embed 준비)
