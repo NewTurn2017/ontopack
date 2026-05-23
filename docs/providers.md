@@ -19,7 +19,7 @@ pack enrich-pending --provider-command scripts/providers/auto_media_worker.py --
 For the current Mac-first path, install local media tools with Homebrew:
 
 ```bash
-brew install ollama tesseract ffmpeg
+brew install ollama tesseract ffmpeg whisper-cpp
 ollama pull gemma4:e4b
 ```
 
@@ -29,19 +29,22 @@ Recommended local-only run:
 ONTOPACK_PROVIDER_MODE=local \
   OLLAMA_MODEL=gemma4:e4b \
   TESSERACT_LANG=eng+kor \
+  WHISPER_MODEL=/path/to/ggml-model.bin \
+  WHISPER_LANG=auto \
   pack enrich-pending --provider-command /path/to/ontopack/scripts/providers/auto_media_worker.py --limit 1
 ```
 
 Behavior by media type:
 
 - image: Ollama vision caption when `ollama` is installed; Tesseract OCR when `tesseract` is installed.
-- video/audio: ffprobe metadata through `ffmpeg`; keyframe/STT extraction should be added as the next provider expansion.
+- video/audio: ffprobe metadata through `ffmpeg`; video keyframe timestamp candidates are emitted into `keyframes`; optional whisper.cpp transcription runs when `WHISPER_MODEL` points at an installed ggml model.
 
 Verified Mac baseline on the current development machine:
 
 - Ollama `0.20.0` with `gemma4:e4b` installed. `ollama show gemma4:e4b` reports a 128K context window plus vision/audio/tools/thinking capabilities, so it is the default local caption model for the Mac path. Override with `OLLAMA_MODEL` when a stronger local model is installed.
 - Tesseract `5.5.2` with NEON support is sufficient for local OCR.
-- FFmpeg/ffprobe `8.1` with NEON/OpenCL/VideoToolbox is sufficient for local metadata extraction and future keyframe/audio extraction.
+- FFmpeg/ffprobe `8.1` with NEON/OpenCL/VideoToolbox is sufficient for local metadata extraction and audio preparation.
+- whisper.cpp `1.8.4` is installed; transcript generation is enabled only when `WHISPER_MODEL` is set so normal installs do not fail on missing STT models.
 
 Reference docs checked for the default choices:
 
@@ -76,7 +79,7 @@ The provider contract is OS-neutral: an executable reads JSON from stdin and wri
 - Ollama for Windows for local vision models.
 - Tesseract OCR Windows builds or package-manager install.
 - FFmpeg Windows build in PATH for video/audio metadata/extraction.
-- whisper.cpp or another local STT executable in PATH for future transcript workers.
+- whisper.cpp or another local STT executable in PATH for transcript workers; expose its model path through `WHISPER_MODEL`.
 
 No OntoPack storage format should change for Windows; only provider executable discovery/setup should vary.
 
@@ -91,7 +94,7 @@ Recommended entrypoint. Routes to API first when `OPENAI_API_KEY` is set, otherw
 
 ### `scripts/providers/local_media_worker.py`
 
-Local-only worker for macOS-first setup. Uses Ollama/Tesseract/ffprobe when available and never calls a cloud API.
+Local-only worker for macOS-first setup. Uses Ollama/Tesseract/ffprobe/whisper.cpp when available and never calls a cloud API. Images can get captions/OCR; videos/audio get metadata, video keyframe timestamp candidates, and optional transcript text when `WHISPER_MODEL` is configured.
 
 ### `scripts/providers/fixture_media_worker.py`
 
