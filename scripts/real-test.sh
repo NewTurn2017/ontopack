@@ -217,10 +217,18 @@ MCP_OUT="$(printf '%s\n' \
   '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"search","arguments":{"query":"공통질문","type":"prompt","k":1}}}' \
   '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"timeline","arguments":{"type":"prompt","from":"2026-05-01","to":"2026-05-31","k":5}}}' \
   '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"ask","arguments":{"question":"온톨로지 강의 핵심?","k":3}}}' \
+  '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"media/list_pending","arguments":{"k":10}}}' \
+  '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"media/read_note","arguments":{"note_id":"diagram-image"}}}' \
+  '{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"media/write_enrichment","arguments":{"note_id":"diagram-image","caption":"MCP generated graph lattice caption","tags":["mcp-enriched"],"provider":"real-test","model":"deterministic"}}}' \
+  '{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"index/rebuild","arguments":{}}}' \
+  '{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"search","arguments":{"query":"lattice","k":3}}}' \
   | "$MCP_BIN" --pack-root "$PACK_DIR")"
 printf '%s\n' "$MCP_OUT" | grep -q '"serverInfo"'
+printf '%s\n' "$MCP_OUT" | grep -q 'media/list_pending'
 printf '%s\n' "$MCP_OUT" | grep -q 'filter-target'
 printf '%s\n' "$MCP_OUT" | grep -q 'context_blocks'
+printf '%s\n' "$MCP_OUT" | grep -q 'diagram-image'
+printf '%s\n' "$MCP_OUT" | grep -q 'MCP generated graph lattice caption'
 
 echo "[8/10] open URL smoke"
 OPEN_URL="$(cd "$PACK_DIR" && "$PACK_BIN" open --port 0 --no-browser --print-url)"

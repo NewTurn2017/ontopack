@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use pack_core::enrichment::EnrichmentPatch;
 use pack_core::pack::{AddOutcome, Pack};
 use pack_core::search::SearchFilters;
 use serde_json::{json, Value};
@@ -127,6 +128,65 @@ fn tool_schemas() -> Vec<Value> {
                 }
             }),
         ),
+        tool_schema(
+            "media/list_pending",
+            "List media sidecar notes that still need AI enrichment",
+            json!({
+                "type": "object",
+                "properties": {
+                    "k": { "type": "integer", "minimum": 1, "default": 50 }
+                }
+            }),
+        ),
+        tool_schema(
+            "media/read_note",
+            "Read a media sidecar note and local asset path for an external AI worker",
+            json!({
+                "type": "object",
+                "properties": {
+                    "note_id": { "type": "string" }
+                },
+                "required": ["note_id"]
+            }),
+        ),
+        tool_schema(
+            "media/write_enrichment",
+            "Write AI-generated caption/OCR/transcript/summary into a managed sidecar block",
+            json!({
+                "type": "object",
+                "properties": {
+                    "note_id": { "type": "string" },
+                    "caption": { "type": "string" },
+                    "tags": { "type": "array", "items": { "type": "string" } },
+                    "ocr": { "type": "string" },
+                    "transcript": { "type": "string" },
+                    "summary": { "type": "string" },
+                    "keyframes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "time": { "type": "string" },
+                                "text": { "type": "string" }
+                            },
+                            "required": ["time", "text"]
+                        }
+                    },
+                    "provider": { "type": "string" },
+                    "model": { "type": "string" },
+                    "generated_at": { "type": "string" }
+                },
+                "required": ["note_id"]
+            }),
+        ),
+        tool_schema(
+            "index/rebuild",
+            "Rebuild the local SQLite search index after source or enrichment changes",
+            json!({
+                "type": "object",
+                "properties": {}
+            }),
+        ),
     ]
 }
 
@@ -157,6 +217,10 @@ impl McpServer {
             "related" => self.tool_related(&arguments),
             "add" => self.tool_add(&arguments),
             "timeline" => self.tool_timeline(&arguments),
+            "media/list_pending" => self.tool_media_list_pending(&arguments),
+            "media/read_note" => self.tool_media_read_note(&arguments),
+            "media/write_enrichment" => self.tool_media_write_enrichment(&arguments),
+            "index/rebuild" => self.tool_index_rebuild(),
             other => tool_error(format!("unknown tool: {other}")),
         }
     }
@@ -299,6 +363,96 @@ impl McpServer {
             Err(err) => tool_error(err.to_string()),
         }
     }
+
+    fn tool_media_list_pending(&self, arguments: &Value) -> Value {
+        let k = read_k(arguments, 50);
+        match self.pack.pending_enrichment_objects() {
+            Ok(mut objects) => {
+                objects.truncate(k);
+                tool_json(json!({
+                    "pending": objects.into_iter().map(pack_object_json).collect::<Vec<_>>()
+                }))
+            }
+            Err(err) => tool_error(err.to_string()),
+        }
+    }
+
+    fn tool_media_read_note(&self, arguments: &Value) -> Value {
+        let Some(note_id) = arguments.get("note_id").and_then(Value::as_str) else {
+            return tool_error("media/read_note requires note_id");
+        };
+        match self.pack.scan_notes() {
+            Ok(notes) => {
+                let Some(note) = notes.into_iter().find(|note| note.id == note_id) else {
+                    return tool_error(format!("note not found: {note_id}"));
+                };
+                let raw = match std::fs::read_to_string(&note.path) {
+                    Ok(raw) => raw,
+                    Err(err) => return tool_error(err.to_string()),
+                };
+                let asset_abs_path = note
+                    .asset
+                    .as_ref()
+                    .map(|asset| self.pack.root.join(asset).to_string_lossy().to_string());
+                tool_json(json!({
+                    "note": {
+                        "id": note.id,
+                        "title": note.title,
+                        "note_type": note.note_type,
+                        "tags": note.tags,
+                        "created": note.created,
+                        "related": note.related,
+                        "note_path": note.path.to_string_lossy(),
+                        "asset_path": note.asset,
+                        "asset_abs_path": asset_abs_path,
+                        "body": note.body,
+                        "raw": raw
+                    }
+                }))
+            }
+            Err(err) => tool_error(err.to_string()),
+        }
+    }
+
+    fn tool_media_write_enrichment(&self, arguments: &Value) -> Value {
+        let Some(note_id) = arguments.get("note_id").and_then(Value::as_str) else {
+            return tool_error("media/write_enrichment requires note_id");
+        };
+        let patch: EnrichmentPatch = match serde_json::from_value(arguments.clone()) {
+            Ok(patch) => patch,
+            Err(err) => return tool_error(format!("invalid enrichment patch: {err}")),
+        };
+        match self.pack.update_enrichment(note_id, &patch) {
+            Ok(note_path) => match self.pack.refresh_object_manifest() {
+                Ok(manifest_path) => tool_json(json!({
+                    "updated": {
+                        "note_id": note_id,
+                        "note_path": note_path.to_string_lossy(),
+                        "manifest_path": manifest_path.to_string_lossy(),
+                        "requires_index_rebuild": true
+                    }
+                })),
+                Err(err) => tool_error(err.to_string()),
+            },
+            Err(err) => tool_error(err.to_string()),
+        }
+    }
+
+    fn tool_index_rebuild(&self) -> Value {
+        match self.pack.build_index() {
+            Ok(indexed_notes) => match self.pack.refresh_object_manifest() {
+                Ok(manifest_path) => tool_json(json!({
+                    "index": {
+                        "indexed_notes": indexed_notes,
+                        "index_path": self.pack.index_path().to_string_lossy(),
+                        "manifest_path": manifest_path.to_string_lossy()
+                    }
+                })),
+                Err(err) => tool_error(err.to_string()),
+            },
+            Err(err) => tool_error(err.to_string()),
+        }
+    }
 }
 
 fn read_k(arguments: &Value, default: usize) -> usize {
@@ -334,6 +488,20 @@ fn search_hit_json(hit: pack_core::search::SearchHit) -> Value {
         "path": hit.path,
         "score": hit.score,
         "rank_source": rank_source_label(hit.rank_source)
+    })
+}
+
+fn pack_object_json(object: pack_core::pack::PackObject) -> Value {
+    json!({
+        "note_id": object.note_id,
+        "title": object.title,
+        "note_type": object.note_type,
+        "kind": object.kind,
+        "note_path": object.note_path,
+        "asset_path": object.asset_path,
+        "content_hash": object.content_hash,
+        "indexed": object.indexed,
+        "enrichment_status": object.enrichment_status
     })
 }
 
@@ -407,7 +575,20 @@ mod tests {
             .iter()
             .map(|tool| tool["name"].as_str().unwrap())
             .collect();
-        assert_eq!(names, vec!["search", "ask", "related", "add", "timeline"]);
+        assert_eq!(
+            names,
+            vec![
+                "search",
+                "ask",
+                "related",
+                "add",
+                "timeline",
+                "media/list_pending",
+                "media/read_note",
+                "media/write_enrichment",
+                "index/rebuild"
+            ]
+        );
     }
 
     #[test]
@@ -572,6 +753,57 @@ common term",
         );
         assert_eq!(result["added"]["kind"], "content");
         assert!(root.join("notes/강의 훅.md").exists());
+    }
+
+    #[test]
+    fn media_tools_enrich_sidecar_and_rebuild_search_index() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        let source = dir.path().join("clip.mp4");
+        std::fs::write(&source, b"fake mp4").unwrap();
+        let pack = Pack::open(&root).unwrap();
+        pack.add_file(&source, "video").unwrap();
+        let server = McpServer::open(&root).unwrap();
+
+        let pending = call_tool(&server, "media/list_pending", json!({ "k": 10 }));
+        assert_eq!(pending["pending"][0]["note_id"], "clip");
+        assert_eq!(pending["pending"][0]["enrichment_status"], "pending");
+
+        let note = call_tool(&server, "media/read_note", json!({ "note_id": "clip" }));
+        assert_eq!(note["note"]["asset_path"], "assets/clip.mp4");
+        assert!(note["note"]["asset_abs_path"]
+            .as_str()
+            .unwrap()
+            .ends_with("assets/clip.mp4"));
+        assert!(note["note"]["body"]
+            .as_str()
+            .unwrap()
+            .contains("캡션을 적어주세요"));
+
+        let written = call_tool(
+            &server,
+            "media/write_enrichment",
+            json!({
+                "note_id": "clip",
+                "caption": "AI generated cockpit walkthrough",
+                "tags": ["ai", "video"],
+                "transcript": "[00:00] cockpit overview",
+                "provider": "test",
+                "model": "deterministic"
+            }),
+        );
+        assert_eq!(written["updated"]["note_id"], "clip");
+        assert_eq!(written["updated"]["requires_index_rebuild"], true);
+        let raw = std::fs::read_to_string(root.join("notes/clip.md")).unwrap();
+        assert!(raw.contains("캡션을 적어주세요"));
+        assert!(raw.contains("AI generated cockpit walkthrough"));
+
+        let rebuilt = call_tool(&server, "index/rebuild", json!({}));
+        assert_eq!(rebuilt["index"]["indexed_notes"], 1);
+
+        let search = call_tool(&server, "search", json!({ "query": "cockpit", "k": 3 }));
+        assert_eq!(search["hits"][0]["note_id"], "clip");
     }
 
     #[test]

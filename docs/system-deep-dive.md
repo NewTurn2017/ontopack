@@ -15,7 +15,7 @@ Turn a folder of lecture notes, prompts, transcripts, images, videos, research s
 The pack should support three modes of use:
 
 1. **Human viewer** — `pack open` gives a mechanical vault UI for search, media browsing, timeline, graph, note detail, and Ask context blocks.
-2. **Agent connector** — `pack-mcp` lets Codex/Claude call `search`, `ask`, `related`, `add`, and `timeline` against local material.
+2. **Agent connector** — `pack-mcp` lets Codex/Claude call search/context tools plus media enrichment tools against local material.
 3. **Terminal workflow** — `pack init/add/process/build/search/embed/serve/open` stays scriptable and testable.
 
 ### Non-goal
@@ -69,7 +69,8 @@ OntoPack now exposes the storage core before UI polish:
 - `pack status` scans source-of-truth notes/assets and refreshes `.pack/objects.jsonl`, a rebuildable derived object ledger.
 - `pack list --pending-enrichment` shows asset sidecars that still need AI caption/OCR/transcript/tag work.
 - `pack enrich-note <note_id>` writes generated caption/tags/transcript into a managed Markdown block between `<!-- ontopack:enrichment:start -->` and `<!-- ontopack:enrichment:end -->`. Human-authored sidecar text outside that block is preserved.
-- After `pack build --incremental --no-embed`, generated enrichment text is searchable through CLI, HTTP, and MCP search surfaces.
+- After `pack build --incremental --no-embed` or MCP `index/rebuild`, generated enrichment text is searchable through CLI, HTTP, and MCP search surfaces.
+- MCP now exposes the same worker contract: `media/list_pending`, `media/read_note`, `media/write_enrichment`, and `index/rebuild`. This is the intended path for Claude/Codex or another AI provider to caption images, OCR screenshots, transcribe videos/audio, and write results back without owning storage internals.
 
 This keeps original assets and Markdown notes as the durable source of truth while letting Claude/Codex/MCP or future providers act as enrichment workers.
 
@@ -252,6 +253,10 @@ Core MCP tools:
 - `related`: relation traversal
 - `add`: add content/file
 - `timeline`: created-date browsing
+- `media/list_pending`: media sidecars needing AI enrichment
+- `media/read_note`: sidecar body/raw Markdown plus local asset path for an AI worker
+- `media/write_enrichment`: safe managed-block caption/OCR/transcript/summary writes
+- `index/rebuild`: rebuild derived SQLite index after enrichment writes
 
 ### 3.7 Validate the system
 

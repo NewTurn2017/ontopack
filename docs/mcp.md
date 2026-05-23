@@ -17,8 +17,12 @@ cargo run -p pack-mcp -- --pack-root /path/to/my-pack
 - `related` — `note_id`에서 위키링크/related 관계를 `depth` 단계까지 탐색합니다.
 - `add` — 문자열 `content`를 새 노트로 쓰거나 로컬 `path` 파일을 팩에 추가합니다.
 - `timeline` — `created` frontmatter 기준으로 최신순 노트를 반환하고 `from`/`to`/`type`/`k`로 필터링합니다.
+- `media/list_pending` — AI caption/OCR/transcript/tag 작업이 필요한 asset sidecar를 나열합니다.
+- `media/read_note` — 외부 AI worker가 처리할 `note_id`의 sidecar 본문, raw Markdown, 상대/절대 asset path를 반환합니다.
+- `media/write_enrichment` — caption/tags/OCR/transcript/summary/keyframes를 사람이 쓴 본문을 보존하는 managed block에 기록합니다.
+- `index/rebuild` — enrichment 기록 뒤 SQLite 검색 인덱스와 `.pack/objects.jsonl` manifest를 재생성합니다.
 
-모든 도구 응답은 MCP text content 안에 JSON 문자열로 들어갑니다. 인덱스 DB는 파생 캐시이므로 `search`/`ask` 전에는 `pack build` 또는 필요한 경우 `pack embed`를 먼저 실행하세요.
+모든 도구 응답은 MCP text content 안에 JSON 문자열로 들어갑니다. 인덱스 DB는 파생 캐시이므로 `search`/`ask` 전에는 `pack build` 또는 MCP `index/rebuild`를 먼저 실행하세요. vector/hybrid는 real embedding 경로에서 `pack embed`까지 준비해야 합니다.
 
 ## Claude Desktop 설정 예시
 
