@@ -640,6 +640,92 @@ fn bundled_fixture_provider_enriches_media() {
         .stdout(predicate::str::contains("vault#0000"));
 }
 
+#[test]
+fn export_jsonl_markdown_and_mcp_context_include_citations() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("p");
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", root.to_str().unwrap()])
+        .assert()
+        .success();
+
+    std::fs::write(
+        root.join("notes/lecture.md"),
+        "---\ntype: lecture\ntitle: 로컬 온톨로지\ntags: [ontology, local]\ncreated: 2026-05-24\nrelated: [\"[[image-board]]\"]\n---\n지식팩을 어디서든 재사용한다.",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("notes/image-board.md"),
+        "---\ntype: image\ntitle: 보드 이미지\nasset: assets/board.png\ntags: [visual]\n---\n화이트보드 캡션.",
+    )
+    .unwrap();
+    std::fs::write(root.join("assets/board.png"), [0x89, 0x50, 0x4e, 0x47]).unwrap();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["export", "--format", "jsonl"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#""note_id":"lecture""#))
+        .stdout(predicate::str::contains(r#""citation""#))
+        .stdout(predicate::str::contains(
+            r#""asset_path":"assets/board.png""#,
+        ));
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["export", "--format", "markdown-bundle"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("# OntoPack Markdown Bundle"))
+        .stdout(predicate::str::contains("Citation: `note:lecture`"))
+        .stdout(predicate::str::contains("Asset: `assets/board.png`"));
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["export", "--format", "mcp-context"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#""type":"ontopack.mcp_context""#))
+        .stdout(predicate::str::contains(r#""context_blocks""#))
+        .stdout(predicate::str::contains(r#""citation":"note:image-board""#));
+}
+
+#[test]
+fn export_can_write_to_output_file() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("p");
+    let out = dir.path().join("bundle.md");
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", root.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::write(root.join("notes/a.md"), "---\ntitle: A\n---\nportable body").unwrap();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args([
+            "export",
+            "--format",
+            "markdown-bundle",
+            "--output",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("export 완료"));
+
+    let body = std::fs::read_to_string(out).unwrap();
+    assert!(body.contains("portable body"));
+    assert!(body.contains("Citation: `note:a`"));
+}
+
 #[cfg(unix)]
 fn make_executable(path: &std::path::Path) {
     use std::os::unix::fs::PermissionsExt;

@@ -13,7 +13,7 @@ scripts/real-test.sh
 성공 메시지:
 
 ```text
-Ontopack real test passed: realistic pack + CLI + MCP + viewer APIs + filter stress + open URL
+Ontopack real test passed: realistic pack + CLI + exports + MCP + viewer APIs + filter stress + open URL
 ```
 
 기본 실행은 모델 다운로드 없이 keyword/chunk-only 경로를 검증합니다.
@@ -33,7 +33,12 @@ Ontopack real test passed: realistic pack + CLI + MCP + viewer APIs + filter str
 
 1. `pack init`, `pack add`, `pack process`, `pack build --no-embed`, `pack build --incremental --no-embed`
 2. CLI keyword search source card 출력
-3. HTTP viewer API
+3. Portable context export
+   - `pack export --format jsonl`
+   - `pack export --format markdown-bundle --output ...`
+   - `pack export --format mcp-context`
+   - 모든 출력은 `note:<id>` citation과 asset path를 포함해야 함
+4. HTTP viewer API
    - `/api/search` with `type/tag/from/to/k`
    - `/api/ask`
    - `/api/facets`
@@ -43,14 +48,14 @@ Ontopack real test passed: realistic pack + CLI + MCP + viewer APIs + filter str
    - `/api/notes/<id>`
    - `/api/related/<id>`
    - 400 JSON error for missing `q`
-4. MCP stdio tools
+5. MCP stdio tools
    - `initialize`
    - `tools/list`
    - `search`
    - `timeline`
    - `ask`
-5. `pack open --port 0 --no-browser --print-url`
-6. 필터가 `LIMIT` 전에 적용되는지 확인하는 실제형 회귀 테스트
+6. `pack open --port 0 --no-browser --print-url`
+7. 필터가 `LIMIT` 전에 적용되는지 확인하는 실제형 회귀 테스트
 
 
 ## 미디어 인텔리전스 실제 테스트

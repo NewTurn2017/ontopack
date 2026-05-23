@@ -45,10 +45,10 @@ serve_json() {
   (cd "$PACK_DIR" && "$PACK_BIN" serve --port 0 --once --request "$request") | json_last_line
 }
 
-echo "[1/10] build debug binaries"
+echo "[1/11] build debug binaries"
 cargo build --quiet -p pack-cli -p pack-mcp --manifest-path "$ROOT/Cargo.toml"
 
-echo "[2/10] seed realistic pack: $PACK_DIR"
+echo "[2/11] seed realistic pack: $PACK_DIR"
 "$PACK_BIN" init "$PACK_DIR" >/tmp/ontopack-real-init.out
 mkdir -p "$PACK_DIR/_inbox" "$PACK_DIR/notes/lectures" "$PACK_DIR/notes/research"
 
@@ -151,7 +151,7 @@ created: 2026-05-20
 지식팩 검색 흐름을 짧게 보여주는 데모 비디오 클립이다.
 NOTE
 
-echo "[3/10] process inbox and build index twice"
+echo "[3/11] process inbox and build index twice"
 (cd "$PACK_DIR" && "$PACK_BIN" process >/tmp/ontopack-real-process.out)
 (cd "$PACK_DIR" && "$PACK_BIN" build --no-embed >/tmp/ontopack-real-build.out)
 (cd "$PACK_DIR" && "$PACK_BIN" build --incremental --no-embed >/tmp/ontopack-real-build-incremental.out)
@@ -169,7 +169,7 @@ grep -q 'done_enrichment=1' /tmp/ontopack-real-status-after.out
 grep -q 'processed=1' /tmp/ontopack-real-enrich-pending.out
 grep -q 'indexed=' /tmp/ontopack-real-enrich-pending.out
 
-echo "[4/10] CLI real-user keyword searches"
+echo "[4/11] CLI real-user keyword searches"
 CLI_ONTOLOGY="$(cd "$PACK_DIR" && "$PACK_BIN" search "온톨로지" --mode keyword -k 5)"
 printf '%s\n' "$CLI_ONTOLOGY" | grep -q '\[keyword\]'
 printf '%s\n' "$CLI_ONTOLOGY" | grep -q 'lecture-outline#0000\|thumbnail-hook#0000\|evidence-image#0000'
@@ -180,7 +180,19 @@ printf '%s\n' "$CLI_ENRICHED" | grep -q 'demo-video#0000'
 CLI_WORKER="$(cd "$PACK_DIR" && "$PACK_BIN" search "fixture-provider" --mode keyword -k 3)"
 printf '%s\n' "$CLI_WORKER" | grep -q '#0000'
 
-echo "[5/10] viewer API filtered search, including >100 distractors"
+echo "[5/11] portable context exports"
+(cd "$PACK_DIR" && "$PACK_BIN" export --format jsonl >/tmp/ontopack-real-export.jsonl)
+grep -q '"note_id":"lecture-outline"' /tmp/ontopack-real-export.jsonl
+grep -q '"asset_path":"assets/evidence.png"' /tmp/ontopack-real-export.jsonl
+(cd "$PACK_DIR" && "$PACK_BIN" export --format markdown-bundle --output /tmp/ontopack-real-export.md >/tmp/ontopack-real-export-file.out)
+grep -q 'export 완료' /tmp/ontopack-real-export-file.out
+grep -q 'Citation: `note:lecture-outline`' /tmp/ontopack-real-export.md
+grep -q 'Asset: `assets/evidence.png`' /tmp/ontopack-real-export.md
+(cd "$PACK_DIR" && "$PACK_BIN" export --format mcp-context >/tmp/ontopack-real-mcp-context.json)
+grep -q '"type":"ontopack.mcp_context"' /tmp/ontopack-real-mcp-context.json
+grep -q '"citation":"note:demo-video"' /tmp/ontopack-real-mcp-context.json
+
+echo "[6/11] viewer API filtered search, including >100 distractors"
 SEARCH_JSON="$(serve_json $'GET /api/search?q=%EA%B3%B5%ED%86%B5%EC%A7%88%EB%AC%B8&type=prompt&tag=needle&from=2026-05-01&to=2026-05-31&k=1 HTTP/1.1\r\nHost: localhost\r\n\r\n')"
 assert_json "filtered search returns target with timing" "$SEARCH_JSON" 'len(v["hits"]) == 1 and v["hits"][0]["note_id"] == "filter-target" and v["mode"] == "keyword" and v["source"] == "sqlite_fts" and isinstance(v["elapsed_ms"], int)'
 VECTOR_ERROR_JSON="$(serve_json $'GET /api/search?q=%EA%B3%B5%ED%86%B5%EC%A7%88%EB%AC%B8&mode=vector HTTP/1.1\r\nHost: localhost\r\n\r\n')"
@@ -192,7 +204,7 @@ assert_json "ask returns context blocks with timing" "$ASK_JSON" 'v["answer_mode
 ERROR_JSON="$(serve_json $'GET /api/search HTTP/1.1\r\nHost: localhost\r\n\r\n')"
 assert_json "missing q returns json error" "$ERROR_JSON" '"missing query parameter: q" in v["error"]'
 
-echo "[6/10] viewer API facets/gallery/timeline/graph/note/related"
+echo "[7/11] viewer API facets/gallery/timeline/graph/note/related"
 CAPS_JSON="$(serve_json $'GET /api/capabilities HTTP/1.1\r\nHost: localhost\r\n\r\n')"
 assert_json "capabilities report keyword-only server mode" "$CAPS_JSON" 'v["default_search_mode"] == "keyword" and v["semantic_search"] is False and any(m["mode"] == "vector" and m["available"] is False for m in v["search_modes"])'
 FACETS_JSON="$(serve_json $'GET /api/facets HTTP/1.1\r\nHost: localhost\r\n\r\n')"
@@ -215,7 +227,7 @@ assert_json "video note returns playable media metadata" "$VIDEO_NOTE_JSON" 'v["
 RELATED_JSON="$(serve_json $'GET /api/related/lecture-outline?depth=1 HTTP/1.1\r\nHost: localhost\r\n\r\n')"
 assert_json "related follows links" "$RELATED_JSON" 'any(item["id"] == "thumbnail-hook" for item in v["related"])'
 
-echo "[7/10] MCP stdio tools against realistic pack"
+echo "[8/11] MCP stdio tools against realistic pack"
 MCP_OUT="$(printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
@@ -235,11 +247,11 @@ printf '%s\n' "$MCP_OUT" | grep -q 'context_blocks'
 printf '%s\n' "$MCP_OUT" | grep -q 'diagram-image'
 printf '%s\n' "$MCP_OUT" | grep -q 'MCP generated graph lattice caption'
 
-echo "[8/10] open URL smoke"
+echo "[9/11] open URL smoke"
 OPEN_URL="$(cd "$PACK_DIR" && "$PACK_BIN" open --port 0 --no-browser --print-url)"
 printf '%s\n' "$OPEN_URL" | grep -q '^http://127\.0\.0\.1:'
 
-echo "[9/10] optional real embedding gate"
+echo "[10/11] optional real embedding gate"
 if [[ "$RUN_REAL_EMBED" == "1" ]]; then
   REAL_PACK_BIN="${REAL_PACK_BIN:-$ROOT/target/release/pack}"
   cargo build --quiet --release -p pack-cli --features real-embed --manifest-path "$ROOT/Cargo.toml"
@@ -250,5 +262,5 @@ else
   echo "skip real embedding download/runtime; set RUN_REAL_EMBED=1 to exercise BGE-M3 path"
 fi
 
-echo "[10/10] real test summary"
-echo "Ontopack real test passed: realistic pack + CLI + MCP + viewer APIs + filter stress + open URL"
+echo "[11/11] real test summary"
+echo "Ontopack real test passed: realistic pack + CLI + exports + MCP + viewer APIs + filter stress + open URL"

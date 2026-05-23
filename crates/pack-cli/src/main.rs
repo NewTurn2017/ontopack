@@ -7,7 +7,7 @@ use pack_core::pack::{find_pack_root, AddOutcome, Pack, PackObject, PackStatus};
 use pack_core::search::{RankSource, SearchHit};
 use serde_json::json;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, Stdio};
 
 #[derive(Parser)]
@@ -110,6 +110,15 @@ enum Commands {
         #[arg(long, value_enum, default_value_t = SearchModeArg::Keyword)]
         mode: SearchModeArg,
     },
+    /// 팩 내용을 외부 도구/LLM/강의 번들용 portable context로 내보낸다
+    Export {
+        /// 출력 형식
+        #[arg(long, value_enum, default_value_t = ExportFormatArg::MarkdownBundle)]
+        format: ExportFormatArg,
+        /// 출력 파일 경로. 생략하면 stdout으로 출력한다
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
     /// 로컬 HTTP 뷰어/API 서버를 시작한다
     Serve {
         /// 바인딩할 로컬 포트 (0이면 임의 포트)
@@ -141,6 +150,13 @@ enum SearchModeArg {
     Keyword,
     Vector,
     Hybrid,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum ExportFormatArg {
+    MarkdownBundle,
+    Jsonl,
+    McpContext,
 }
 
 fn main() -> Result<()> {
@@ -289,6 +305,23 @@ fn main() -> Result<()> {
             }
             for h in hits {
                 print_search_hit(&h);
+            }
+        }
+        Commands::Export { format, output } => {
+            let root = find_pack_root(&std::env::current_dir()?)?;
+            let pack = Pack::open(&root)?;
+            let body = export_pack(&pack, format)?;
+            if let Some(output) = output {
+                if let Some(parent) = output
+                    .parent()
+                    .filter(|parent| !parent.as_os_str().is_empty())
+                {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&output, body)?;
+                println!("export 완료: {}", output.display());
+            } else {
+                print!("{body}");
             }
         }
         Commands::Serve {
@@ -456,6 +489,107 @@ fn print_objects(objects: &[PackObject]) {
             object.asset_path.as_deref().unwrap_or("-")
         );
     }
+}
+
+fn export_pack(pack: &Pack, format: ExportFormatArg) -> Result<String> {
+    let mut notes = pack.scan_notes()?;
+    notes.sort_by(|a, b| a.id.cmp(&b.id));
+    match format {
+        ExportFormatArg::MarkdownBundle => export_markdown_bundle(pack, &notes),
+        ExportFormatArg::Jsonl => export_jsonl(pack, &notes),
+        ExportFormatArg::McpContext => export_mcp_context(pack, &notes),
+    }
+}
+
+fn export_markdown_bundle(pack: &Pack, notes: &[pack_core::note::Note]) -> Result<String> {
+    let mut out = String::new();
+    out.push_str("# OntoPack Markdown Bundle\n\n");
+    out.push_str(&format!("Pack: `{}`\n\n", pack.config.name));
+    for note in notes {
+        let note_path = display_pack_path(pack, &note.path);
+        out.push_str(&format!("## {}\n\n", note.title));
+        out.push_str(&format!("- Citation: `note:{}`\n", note.id));
+        out.push_str(&format!("- Note ID: `{}`\n", note.id));
+        out.push_str(&format!("- Type: `{}`\n", note.note_type));
+        if !note.tags.is_empty() {
+            out.push_str(&format!("- Tags: `{}`\n", note.tags.join("`, `")));
+        }
+        if let Some(created) = &note.created {
+            out.push_str(&format!("- Created: `{created}`\n"));
+        }
+        out.push_str(&format!("- Note path: `{note_path}`\n"));
+        if let Some(asset) = &note.asset {
+            out.push_str(&format!("- Asset: `{asset}`\n"));
+        }
+        if !note.related.is_empty() {
+            out.push_str(&format!("- Related: `{}`\n", note.related.join("`, `")));
+        }
+        out.push('\n');
+        out.push_str(note.body.trim_end());
+        out.push_str("\n\n---\n\n");
+    }
+    Ok(out)
+}
+
+fn export_jsonl(pack: &Pack, notes: &[pack_core::note::Note]) -> Result<String> {
+    let mut out = String::new();
+    for note in notes {
+        let note_path = display_pack_path(pack, &note.path);
+        let line = json!({
+            "note_id": note.id,
+            "title": note.title,
+            "type": note.note_type,
+            "tags": note.tags,
+            "created": note.created,
+            "note_path": note_path,
+            "asset_path": note.asset,
+            "related": note.related,
+            "body": note.body,
+            "citation": {
+                "note_id": note.id,
+                "note_path": note_path,
+                "asset_path": note.asset,
+            }
+        });
+        out.push_str(&serde_json::to_string(&line)?);
+        out.push('\n');
+    }
+    Ok(out)
+}
+
+fn export_mcp_context(pack: &Pack, notes: &[pack_core::note::Note]) -> Result<String> {
+    let context_blocks: Vec<_> = notes
+        .iter()
+        .map(|note| {
+            let note_path = display_pack_path(pack, &note.path);
+            json!({
+                "note_id": note.id,
+                "title": note.title,
+                "type": note.note_type,
+                "tags": note.tags,
+                "created": note.created,
+                "note_path": note_path,
+                "asset_path": note.asset,
+                "related": note.related,
+                "body": note.body,
+                "citation": format!("note:{}", note.id),
+            })
+        })
+        .collect();
+    let value = json!({
+        "type": "ontopack.mcp_context",
+        "pack": pack.config.name,
+        "instruction": "Use context_blocks as source-grounded local knowledge. Cite note_id or citation for every derived answer.",
+        "context_blocks": context_blocks,
+    });
+    Ok(format!("{}\n", serde_json::to_string(&value)?))
+}
+
+fn display_pack_path(pack: &Pack, path: &Path) -> String {
+    path.strip_prefix(&pack.root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .to_string()
 }
 
 fn rank_source_label(source: RankSource) -> &'static str {
