@@ -592,6 +592,54 @@ json.dump({
         .stdout(predicate::str::contains("객체 없음"));
 }
 
+#[test]
+fn bundled_fixture_provider_enriches_media() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("p");
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap();
+    let provider = repo_root.join("scripts/providers/fixture_media_worker.py");
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", root.to_str().unwrap()])
+        .assert()
+        .success();
+    let img = dir.path().join("vault.png");
+    std::fs::write(&img, [0x89, 0x50, 0x4e, 0x47]).unwrap();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["add", img.to_str().unwrap(), "--type", "image"])
+        .assert()
+        .success();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args([
+            "enrich-pending",
+            "--provider-command",
+            provider.to_str().unwrap(),
+            "--limit",
+            "1",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("processed=1"));
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["search", "fixture-provider"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("vault#0000"));
+}
+
 #[cfg(unix)]
 fn make_executable(path: &std::path::Path) {
     use std::os::unix::fs::PermissionsExt;

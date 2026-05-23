@@ -71,7 +71,7 @@ OntoPack now exposes the storage core before UI polish:
 - `pack list --pending-enrichment` shows asset sidecars that still need AI caption/OCR/transcript/tag work.
 - `pack enrich-note <note_id>` writes generated caption/tags/transcript into a managed Markdown block between `<!-- ontopack:enrichment:start -->` and `<!-- ontopack:enrichment:end -->`. Human-authored sidecar text outside that block is preserved.
 - After `pack build --incremental --no-embed` or MCP `index/rebuild`, generated enrichment text is searchable through CLI, HTTP, and MCP search surfaces.
-- `pack enrich-pending --provider-command <cmd>` drains pending media sidecars through an external JSON-in/JSON-out provider command, writes managed enrichment, refreshes `.pack/objects.jsonl`, and rebuilds search by default.
+- `pack enrich-pending --provider-command <cmd>` drains pending media sidecars through an external JSON-in/JSON-out provider command, writes managed enrichment, refreshes `.pack/objects.jsonl`, and rebuilds search by default. Bundled worker examples live in `scripts/providers/` and are documented in `docs/providers.md`.
 - MCP now exposes the same worker contract: `media/list_pending`, `media/read_note`, `media/write_enrichment`, and `index/rebuild`. This is the intended path for Claude/Codex or another AI provider to caption images, OCR screenshots, transcribe videos/audio, and write results back without owning storage internals.
 
 This keeps original assets and Markdown notes as the durable source of truth while letting Claude/Codex/MCP or future providers act as enrichment workers.

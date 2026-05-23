@@ -43,7 +43,7 @@
 - `pack enrich-pending --provider-command <cmd>` — pending media sidecar를 외부 AI/provider worker 명령으로 자동 caption/OCR/transcript enrichment 후 검색 인덱스 재빌드
 - media 도구는 Claude/Codex 같은 외부 AI worker가 로컬 asset sidecar를 읽고 caption/OCR/transcript/summary를 안전한 managed block에 쓰도록 연결
 - `related`/`timeline`/`add`/media 동작은 `pack-core`가 소유하고 MCP는 얇은 JSON-RPC 어댑터로 유지
-- 설정 예시는 `docs/mcp.md` 참고
+- 설정 예시는 `docs/mcp.md`, provider worker 예시는 `docs/providers.md` 참고
 
 ## M4
 - `pack serve --port 8787` — 현재 팩을 localhost JSON API + 정적 위키 뷰어로 제공
