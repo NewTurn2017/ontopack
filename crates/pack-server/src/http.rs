@@ -335,6 +335,9 @@ Host: localhost
         let html = String::from_utf8(response.body).unwrap();
         assert!(html.contains("ontopack"));
         assert!(html.contains("/app.js"));
+        assert!(html.contains("ask-form"));
+        assert!(html.contains("type-filter"));
+        assert!(html.contains("gallery"));
     }
     #[test]
     fn api_ask_http_returns_context_blocks() {
