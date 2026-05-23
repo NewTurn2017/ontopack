@@ -8,55 +8,146 @@ pub fn index_html() -> &'static str {
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <header>
-    <p class="eyebrow">local ontology knowledge pack</p>
-    <h1>ontopack</h1>
-    <p>로컬 팩의 노트, 검색 카드, 관련 링크, 타임라인, 갤러리를 빠르게 탐색합니다.</p>
-  </header>
-  <main>
-    <section class="panel search-panel">
-      <form id="search-form">
-        <input id="search-input" name="q" autocomplete="off" placeholder="예: 썸네일 훅, 강의 구조, 이미지 프롬프트" autofocus>
-        <select id="type-filter" aria-label="type filter"><option value="">모든 타입</option></select>
-        <select id="tag-filter" aria-label="tag filter"><option value="">모든 태그</option></select>
-        <input id="from-filter" type="date" aria-label="from date">
-        <input id="to-filter" type="date" aria-label="to date">
-        <button type="submit">검색</button>
-      </form>
-      <div id="results" class="cards"></div>
-    </section>
-    <section class="panel ask-panel">
-      <form id="ask-form">
-        <input id="ask-input" name="q" autocomplete="off" placeholder="예: 이 팩에서 썸네일 훅 자료 요약해줘">
-        <button type="submit">Ask 컨텍스트</button>
-      </form>
-      <div id="ask-context" class="cards muted">질문하면 citation-ready context blocks를 보여줍니다.</div>
-    </section>
-    <section class="grid">
-      <article class="panel">
-        <h2>노트</h2>
-        <div id="note-detail" class="note-detail muted">검색 결과를 클릭하면 노트가 열립니다.</div>
-      </article>
-      <article class="panel">
-        <h2>관련 노트</h2>
-        <div id="related" class="cards muted">노트 선택 대기 중</div>
-      </article>
-    </section>
-    <section class="grid">
-      <article class="panel gallery-panel">
-        <h2>갤러리</h2>
-        <div id="gallery" class="cards"></div>
-      </article>
-      <article class="panel">
-        <h2>타임라인</h2>
-        <div id="timeline" class="cards"></div>
-      </article>
-      <article class="panel">
-        <h2>그래프</h2>
-        <div id="graph" class="graph"></div>
-      </article>
-    </section>
-  </main>
+  <div class="vault-shell">
+    <aside class="identity-rail" aria-label="OntoPack identity and local status">
+      <div class="lock-mark" aria-hidden="true"><span></span></div>
+      <div class="brand-block">
+        <p class="eyebrow">secure knowledge vault</p>
+        <h1>OntoPack</h1>
+        <p class="tagline">UNLOCK YOUR KNOWLEDGE</p>
+      </div>
+      <div class="rail-section">
+        <h2>LOCAL VAULT</h2>
+        <p>개인 지식팩을 localhost에서 검색하고, 출처 카드와 컨텍스트 블록으로 잠금 해제합니다.</p>
+      </div>
+      <div class="palette" aria-hidden="true">
+        <span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <div class="rail-section terminal-lines">
+        <h2>SYSTEM</h2>
+        <p>&gt; CORE: ONLINE</p>
+        <p>&gt; NETWORK: LOCAL</p>
+        <p>&gt; ANSWER MODE: CONTEXT</p>
+      </div>
+    </aside>
+
+    <div class="workspace">
+      <header class="top-rail">
+        <nav aria-label="Viewer sections">
+          <span class="nav-cell active">Dashboard</span>
+          <span class="nav-cell disabled">Vault</span>
+          <span class="nav-cell disabled">Search</span>
+          <span class="nav-cell disabled">Workflow</span>
+          <span class="nav-cell disabled">Setting</span>
+        </nav>
+        <div class="user-chip" aria-label="local user status">USER: LOCAL</div>
+      </header>
+
+      <main class="dashboard-grid">
+        <section class="module hero-module" aria-labelledby="dashboard-title">
+          <div class="module-header">
+            <div>
+              <p class="eyebrow">system overview</p>
+              <h2 id="dashboard-title">Dashboard</h2>
+            </div>
+            <span class="status-pill">STATUS: OPERATIONAL</span>
+          </div>
+          <div class="stat-grid" aria-label="Pack overview">
+            <div class="stat-card"><span>Total types</span><strong id="stat-types">--</strong></div>
+            <div class="stat-card"><span>Total tags</span><strong id="stat-tags">--</strong></div>
+            <div class="stat-card"><span>Date range</span><strong id="stat-dates">--</strong></div>
+            <div class="stat-card"><span>Mode</span><strong>LOCAL</strong></div>
+          </div>
+        </section>
+
+        <section class="module search-module" aria-labelledby="search-title">
+          <div class="module-header">
+            <div>
+              <p class="eyebrow">smart search</p>
+              <h2 id="search-title">Vault Query Console</h2>
+            </div>
+            <span id="result-count" class="status-pill muted-pill">NO QUERY</span>
+          </div>
+          <form id="search-form" class="control-deck">
+            <label class="sr-only" for="search-input">검색어</label>
+            <input id="search-input" name="q" autocomplete="off" placeholder="예: 썸네일 훅, 강의 구조, 이미지 프롬프트" autofocus>
+            <button type="submit" class="primary-action">검색</button>
+            <select id="type-filter" aria-label="type filter"><option value="">모든 타입</option></select>
+            <select id="tag-filter" aria-label="tag filter"><option value="">모든 태그</option></select>
+            <input id="from-filter" type="date" aria-label="from date">
+            <input id="to-filter" type="date" aria-label="to date">
+          </form>
+          <p id="filter-summary" class="panel-note">FILTERS: ALL SOURCE CARDS</p>
+          <div id="results" class="cards source-grid"></div>
+        </section>
+
+        <section class="module ask-module" aria-labelledby="ask-title">
+          <div class="module-header compact">
+            <div>
+              <p class="eyebrow">context terminal</p>
+              <h2 id="ask-title">Ask Context</h2>
+            </div>
+          </div>
+          <form id="ask-form" class="control-deck ask-deck">
+            <label class="sr-only" for="ask-input">Ask context question</label>
+            <input id="ask-input" name="q" autocomplete="off" placeholder="예: 이 팩에서 썸네일 훅 자료 요약해줘">
+            <button type="submit" class="secondary-action">Ask 컨텍스트</button>
+          </form>
+          <div id="ask-context" class="cards terminal-output muted">질문하면 citation-ready context blocks를 보여줍니다.</div>
+        </section>
+
+        <section class="module note-module" aria-labelledby="note-title">
+          <div class="module-header compact">
+            <div>
+              <p class="eyebrow">selected record</p>
+              <h2 id="note-title">노트</h2>
+            </div>
+          </div>
+          <div id="note-detail" class="note-detail muted">검색 결과를 클릭하면 노트가 열립니다.</div>
+        </section>
+
+        <section class="module related-module" aria-labelledby="related-title">
+          <div class="module-header compact">
+            <div>
+              <p class="eyebrow">linked records</p>
+              <h2 id="related-title">관련 노트</h2>
+            </div>
+          </div>
+          <div id="related" class="cards muted">노트 선택 대기 중</div>
+        </section>
+
+        <section class="module gallery-panel" aria-labelledby="gallery-title">
+          <div class="module-header compact">
+            <div>
+              <p class="eyebrow">asset bay</p>
+              <h2 id="gallery-title">갤러리</h2>
+            </div>
+          </div>
+          <div id="gallery" class="cards"></div>
+        </section>
+
+        <section class="module timeline-module" aria-labelledby="timeline-title">
+          <div class="module-header compact">
+            <div>
+              <p class="eyebrow">archive log</p>
+              <h2 id="timeline-title">타임라인</h2>
+            </div>
+          </div>
+          <div id="timeline" class="cards"></div>
+        </section>
+
+        <section class="module graph-module" aria-labelledby="graph-title">
+          <div class="module-header compact">
+            <div>
+              <p class="eyebrow">relation map</p>
+              <h2 id="graph-title">그래프</h2>
+            </div>
+          </div>
+          <div id="graph" class="graph"></div>
+        </section>
+      </main>
+    </div>
+  </div>
   <script src="/app.js"></script>
 </body>
 </html>
@@ -79,9 +170,12 @@ function escapeHtml(value) {
 
 function card(hit) {
   const id = hit.note_id || hit.id;
-  return `<button class="card" data-note-id="${escapeHtml(id)}">
+  const type = hit.note_type || 'record';
+  const meta = hit.chunk_id || hit.id || '';
+  return `<button class="card source-card type-${escapeHtml(type)}" data-note-id="${escapeHtml(id)}">
+    <span class="card-kicker">${escapeHtml(type)}</span>
     <strong>${escapeHtml(hit.title)}</strong>
-    <span>${escapeHtml(hit.note_type)} · ${escapeHtml(hit.chunk_id || hit.id || '')}</span>
+    <span class="meta-line">${escapeHtml(meta)}</span>
     <p>${escapeHtml(hit.snippet || hit.caption || hit.created || '')}</p>
   </button>`;
 }
@@ -99,28 +193,54 @@ function filterParams() {
   return params;
 }
 
+function updateFilterSummary() {
+  const parts = [];
+  const type = $('type-filter').value;
+  const tag = $('tag-filter').value;
+  const from = $('from-filter').value;
+  const to = $('to-filter').value;
+  if (type) parts.push(`TYPE=${type}`);
+  if (tag) parts.push(`TAG=${tag}`);
+  if (from) parts.push(`FROM=${from}`);
+  if (to) parts.push(`TO=${to}`);
+  $('filter-summary').textContent = parts.length ? `FILTERS: ${parts.join(' · ')}` : 'FILTERS: ALL SOURCE CARDS';
+}
+
+function setResultCount(count, querying = false) {
+  $('result-count').textContent = querying ? 'QUERYING...' : `${count} SOURCE CARD${count === 1 ? '' : 'S'}`;
+  $('result-count').classList.toggle('muted-pill', !querying && count === 0);
+}
+
 async function loadFacets() {
   const facets = await fetchJson('/api/facets');
   $('type-filter').innerHTML = '<option value="">모든 타입</option>' + facets.types.map((type) => `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`).join('');
   $('tag-filter').innerHTML = '<option value="">모든 태그</option>' + facets.tags.map((tag) => `<option value="${escapeHtml(tag)}">#${escapeHtml(tag)}</option>`).join('');
+  $('stat-types').textContent = facets.types.length;
+  $('stat-tags').textContent = facets.tags.length;
+  $('stat-dates').textContent = facets.created_min && facets.created_max ? `${facets.created_min.slice(5)}–${facets.created_max.slice(5)}` : 'NO DATE';
 }
 
 async function search(q) {
+  updateFilterSummary();
+  setResultCount(0, true);
   const params = filterParams();
   params.set('q', q);
   params.set('k', '12');
   const data = await fetchJson(`/api/search?${params.toString()}`);
-  $('results').innerHTML = data.hits.length ? data.hits.map(card).join('') : '<p class="muted">검색 결과 없음</p>';
+  $('results').innerHTML = data.hits.length ? data.hits.map(card).join('') : '<p class="muted empty-state">NO MATCHING SOURCE CARDS</p>';
+  setResultCount(data.hits.length);
 }
 
 async function ask(q) {
-  const data = await fetchJson(`/api/ask?q=${encodeURIComponent(q)}&k=5`);
   $('ask-context').classList.remove('muted');
-  $('ask-context').innerHTML = `<p class="meta">${escapeHtml(data.answer_mode)} · ${escapeHtml(data.instruction)}</p>` +
-    (data.context_blocks.length ? data.context_blocks.map(card).join('') : '<p class="muted">컨텍스트 없음</p>');
+  $('ask-context').innerHTML = '<p class="terminal-line">QUERYING CONTEXT BLOCKS...</p>';
+  const data = await fetchJson(`/api/ask?q=${encodeURIComponent(q)}&k=5`);
+  $('ask-context').innerHTML = `<p class="meta terminal-line">${escapeHtml(data.answer_mode)} · ${escapeHtml(data.instruction)}</p>` +
+    (data.context_blocks.length ? data.context_blocks.map(card).join('') : '<p class="muted empty-state">컨텍스트 없음</p>');
 }
 
 async function openNote(id) {
+  document.querySelectorAll('[data-note-id]').forEach((el) => el.classList.toggle('selected', el.dataset.noteId === id));
   const note = await fetchJson(`/api/notes/${encodeURIComponent(id)}`);
   $('note-detail').classList.remove('muted');
   $('note-detail').innerHTML = `<h3>${escapeHtml(note.title)}</h3>
@@ -128,14 +248,14 @@ async function openNote(id) {
     <pre>${escapeHtml(note.body)}</pre>`;
   const related = await fetchJson(`/api/related/${encodeURIComponent(id)}?depth=1`);
   $('related').classList.remove('muted');
-  $('related').innerHTML = related.related.length ? related.related.map((n) => card({ ...n, chunk_id: `depth ${n.depth}` })).join('') : '<p class="muted">관련 노트 없음</p>';
+  $('related').innerHTML = related.related.length ? related.related.map((n) => card({ ...n, chunk_id: `depth ${n.depth}` })).join('') : '<p class="muted empty-state">관련 노트 없음</p>';
 }
 
 async function loadTimeline() {
   const params = filterParams();
   params.set('k', '10');
   const data = await fetchJson(`/api/timeline?${params.toString()}`);
-  $('timeline').innerHTML = data.notes.length ? data.notes.map((n) => card({ ...n, chunk_id: n.id, snippet: n.created || '' })).join('') : '<p class="muted">created 메타데이터가 있는 노트 없음</p>';
+  $('timeline').innerHTML = data.notes.length ? data.notes.map((n) => card({ ...n, chunk_id: n.id, snippet: n.created || '' })).join('') : '<p class="muted empty-state">created 메타데이터가 있는 노트 없음</p>';
 }
 
 async function loadGallery() {
@@ -145,10 +265,11 @@ async function loadGallery() {
   params.set('k', '12');
   const data = await fetchJson(`/api/gallery?${params.toString()}`);
   $('gallery').innerHTML = data.items.length ? data.items.map((item) => `<button class="card gallery-card" data-note-id="${escapeHtml(item.id)}">
+    <span class="card-kicker">${escapeHtml(item.note_type)}</span>
     <strong>${escapeHtml(item.title)}</strong>
-    <span>${escapeHtml(item.note_type)} · ${escapeHtml(item.asset || '')}</span>
+    <span class="meta-line">${escapeHtml(item.asset || '')}</span>
     <p>${escapeHtml(item.caption || '')}</p>
-  </button>`).join('') : '<p class="muted">asset 사이드카 노트 없음</p>';
+  </button>`).join('') : '<p class="muted empty-state">asset 사이드카 노트 없음</p>';
 }
 
 async function loadGraph() {
@@ -157,10 +278,11 @@ async function loadGraph() {
   if (type) params.set('type', type);
   params.set('limit', '80');
   const graph = await fetchJson(`/api/graph?${params.toString()}`);
-  $('graph').innerHTML = `<p>${graph.nodes.length} nodes · ${graph.edges.length} links</p>` + graph.edges.slice(0, 80).map((e) => `<span>${escapeHtml(e.from)} → ${escapeHtml(e.to)}</span>`).join('');
+  $('graph').innerHTML = `<p class="graph-count">${graph.nodes.length} nodes · ${graph.edges.length} links</p>` + graph.edges.slice(0, 80).map((e) => `<span>${escapeHtml(e.from)} → ${escapeHtml(e.to)}</span>`).join('');
 }
 
 async function refreshPanels() {
+  updateFilterSummary();
   await Promise.all([loadTimeline(), loadGallery(), loadGraph()]);
 }
 
@@ -199,27 +321,259 @@ loadFacets().then(refreshPanels).catch(console.error);
 }
 
 pub fn style_css() -> &'static str {
-    r#":root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
-body { margin: 0; background: #f6f4ef; color: #222; font-size: 15px; line-height: 1.55; }
-header { padding: 40px max(24px, 8vw) 24px; background: #171717; color: #fff; }
-.eyebrow { margin: 0; color: #b7f7d0; text-transform: uppercase; letter-spacing: .12em; font-size: 12px; }
-h1 { margin: 6px 0 8px; font-size: clamp(32px, 6vw, 64px); }
-main { padding: 24px max(18px, 6vw) 48px; }
-.panel { background: #fff; border: 1px solid #e6e1d6; border-radius: 18px; padding: 18px; margin-bottom: 18px; }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }
-form { display: flex; flex-wrap: wrap; gap: 10px; }
-input, select { border: 1px solid #d8d0c1; border-radius: 14px; padding: 12px 14px; font-size: 15px; background: #fff; }
-#search-input, #ask-input { flex: 1 1 280px; font-size: 16px; }
+    r#":root {
+  color-scheme: dark;
+  --bg: #05090a;
+  --bg-2: #081113;
+  --metal: #101719;
+  --metal-2: #151f22;
+  --metal-3: #202b2e;
+  --line: rgba(97, 255, 174, .22);
+  --line-hard: rgba(97, 255, 174, .45);
+  --green: #00f99a;
+  --green-2: #32d583;
+  --cyan: #4cc9f0;
+  --text: #d8e5e0;
+  --muted: #81938e;
+  --danger: #ff5c5c;
+  --shadow: 0 22px 80px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.05);
+  font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html { min-height: 100%; background: var(--bg); }
+body {
+  min-height: 100vh;
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.55;
+  background:
+    radial-gradient(circle at 50% -20%, rgba(0,249,154,.15), transparent 35%),
+    linear-gradient(120deg, rgba(76,201,240,.06), transparent 35%),
+    linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.02) 1px, transparent 1px),
+    var(--bg);
+  background-size: auto, auto, 42px 42px, 42px 42px, auto;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(transparent 50%, rgba(0,0,0,.18) 51%);
+  background-size: 100% 4px;
+  opacity: .28;
+  mix-blend-mode: multiply;
+}
+a, button, input, select { font: inherit; }
+button, input, select { color: inherit; }
 button { cursor: pointer; }
-form button { border: 0; border-radius: 14px; padding: 0 18px; min-height: 44px; background: #1d6b45; color: #fff; font-weight: 700; }
+button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px rgba(0,249,154,.12);
+}
+.vault-shell {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) 1fr;
+  gap: 18px;
+  min-height: 100vh;
+  padding: 18px;
+}
+.identity-rail, .top-rail, .module {
+  position: relative;
+  border: 1px solid rgba(164, 255, 218, .16);
+  background: linear-gradient(145deg, rgba(18,27,29,.96), rgba(7,13,15,.96));
+  box-shadow: var(--shadow);
+}
+.identity-rail::before, .top-rail::before, .module::before {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  pointer-events: none;
+  border: 1px solid rgba(0,249,154,.08);
+}
+.identity-rail {
+  overflow: hidden;
+  padding: 28px 22px;
+  border-radius: 24px;
+  clip-path: polygon(0 18px, 18px 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%);
+}
+.identity-rail::after {
+  content: "";
+  position: absolute;
+  inset: auto -20% 0 -20%;
+  height: 35%;
+  background: repeating-linear-gradient(60deg, rgba(0,249,154,.08), rgba(0,249,154,.08) 1px, transparent 1px, transparent 14px);
+  opacity: .4;
+}
+.lock-mark {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  margin-bottom: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(216,229,224,.42);
+  background: radial-gradient(circle, rgba(0,249,154,.18) 0 18%, rgba(8,15,17,.95) 19% 55%, rgba(255,255,255,.08) 56% 58%, transparent 59%);
+  box-shadow: inset 0 0 24px rgba(0,0,0,.9), 0 0 28px rgba(0,249,154,.12);
+}
+.lock-mark span, .lock-mark::before, .lock-mark::after { content: ""; position: absolute; inset: 16px; border: 1px solid rgba(216,229,224,.28); border-radius: 50%; }
+.lock-mark::before { inset: 30px; background: #0d1416; }
+.lock-mark::after { inset: 42px 18px; border-radius: 999px; background: var(--green); box-shadow: 0 0 12px var(--green); }
+.brand-block h1 {
+  margin: 0;
+  font-size: clamp(32px, 4vw, 48px);
+  letter-spacing: .03em;
+  line-height: 1;
+  text-shadow: 0 0 18px rgba(0,249,154,.2);
+}
+.eyebrow, .tagline, .nav-cell, .user-chip, .status-pill, .panel-note, .card-kicker, .meta, .meta-line, .terminal-lines, .graph-count {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+.eyebrow { margin: 0 0 5px; color: var(--green); text-transform: uppercase; letter-spacing: .12em; font-size: 11px; }
+.tagline { margin: 8px 0 0; color: var(--green-2); letter-spacing: .16em; font-size: 11px; }
+.rail-section { position: relative; z-index: 1; margin-top: 30px; padding-top: 20px; border-top: 1px solid rgba(164,255,218,.12); }
+.rail-section h2 { margin: 0 0 10px; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; }
+.rail-section p { margin: 6px 0; color: var(--muted); }
+.palette { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 26px 0; }
+.palette span { height: 34px; border: 1px solid rgba(255,255,255,.18); background: #0b0f11; }
+.palette span:nth-child(2) { background: #151b1f; }
+.palette span:nth-child(3) { background: #1f2a2e; }
+.palette span:nth-child(4) { background: var(--green-2); box-shadow: 0 0 18px rgba(0,249,154,.32); }
+.palette span:nth-child(5) { background: #d4ddd9; }
+.workspace { min-width: 0; }
+.top-rail {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 74px;
+  padding: 12px 18px;
+  margin-bottom: 18px;
+  border-radius: 18px;
+  clip-path: polygon(0 12px, 12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%);
+}
+.top-rail nav { display: flex; flex-wrap: wrap; gap: 8px; }
+.nav-cell, .user-chip, .status-pill {
+  border: 1px solid rgba(164,255,218,.16);
+  background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(0,0,0,.16));
+  color: var(--muted);
+  padding: 10px 16px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  font-size: 12px;
+}
+.nav-cell.active, .status-pill { color: var(--green); border-color: var(--line-hard); box-shadow: inset 0 -2px 0 rgba(0,249,154,.55); }
+.nav-cell.disabled { opacity: .55; }
+.user-chip { white-space: nowrap; }
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(420px, 1.35fr) minmax(300px, .85fr);
+  gap: 18px;
+}
+.module {
+  min-width: 0;
+  padding: 18px;
+  border-radius: 18px;
+  clip-path: polygon(0 14px, 14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%);
+}
+.module-header { position: relative; z-index: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 16px; }
+.module-header h2 { margin: 0; font-size: 24px; text-transform: uppercase; letter-spacing: .04em; }
+.module-header.compact h2 { font-size: 17px; }
+.hero-module { grid-column: 1 / -1; }
+.search-module { grid-column: 1 / 2; }
+.ask-module, .note-module, .related-module { grid-column: 2 / 3; }
+.gallery-panel, .timeline-module, .graph-module { grid-column: span 1; }
+.stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.stat-card {
+  min-height: 104px;
+  padding: 15px;
+  border: 1px solid rgba(164,255,218,.12);
+  background: rgba(0,0,0,.24);
+  box-shadow: inset 0 0 24px rgba(0,0,0,.38);
+}
+.stat-card span { display: block; color: var(--muted); font-size: 12px; text-transform: uppercase; }
+.stat-card strong { display: block; margin-top: 6px; font-size: clamp(20px, 2vw, 28px); font-weight: 600; }
+.control-deck { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.control-deck input, .control-deck select { flex: 1 1 132px; }
+#search-input, #ask-input { flex: 999 1 280px; }
+.ask-deck { flex-wrap: nowrap; }
+input, select {
+  min-height: 46px;
+  border: 1px solid rgba(0,249,154,.25);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: linear-gradient(180deg, rgba(0,0,0,.42), rgba(9,18,20,.82));
+  color: var(--text);
+}
+input::placeholder { color: rgba(216,229,224,.45); }
+.primary-action, .secondary-action {
+  min-height: 46px;
+  border: 1px solid var(--line-hard);
+  border-radius: 8px;
+  min-width: max-content;
+  padding: 0 18px;
+  color: var(--green);
+  white-space: nowrap;
+  background: linear-gradient(180deg, rgba(0,249,154,.16), rgba(0,0,0,.34));
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  font-weight: 800;
+}
+.secondary-action { color: var(--cyan); border-color: rgba(76,201,240,.35); }
+.panel-note { color: var(--muted); font-size: 12px; letter-spacing: .08em; }
 .cards { display: grid; gap: 10px; }
-.card { display: block; width: 100%; text-align: left; border: 1px solid #e8e3d8; border-radius: 14px; background: #fffdf8; padding: 12px; color: inherit; }
-.card:hover { border-color: #9ccbad; }
-.gallery-card { background: #f8fbff; }
-.card strong { display: block; font-size: 16px; }
-.card span, .meta, .muted { color: #706a60; }
-.card p { margin: 8px 0 0; }
-pre { white-space: pre-wrap; background: #f7f7f7; padding: 12px; border-radius: 12px; overflow: auto; }
-.graph span { display: inline-block; margin: 4px; padding: 5px 8px; border-radius: 999px; background: #edf7ef; color: #29543a; }
+.source-grid { margin-top: 12px; }
+.card {
+  position: relative;
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid rgba(164,255,218,.14);
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(16,24,26,.88), rgba(7,12,13,.92));
+  color: inherit;
+  padding: 13px 14px 13px 16px;
+  box-shadow: inset 3px 0 0 rgba(0,249,154,.25);
+}
+.card:hover, .card.selected { border-color: var(--line-hard); transform: translateY(-1px); box-shadow: inset 3px 0 0 var(--green), 0 0 22px rgba(0,249,154,.12); }
+.card strong { display: block; margin: 2px 0; font-size: 16px; }
+.card p { margin: 8px 0 0; color: #b9c8c3; }
+.card-kicker { color: var(--green); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; }
+.meta-line, .meta, .muted { color: var(--muted); }
+.empty-state { margin: 0; padding: 14px; border: 1px dashed rgba(164,255,218,.16); }
+.terminal-output { min-height: 90px; }
+.terminal-line { color: var(--green); }
+.note-detail h3 { margin: 0 0 6px; color: #fff; }
+pre {
+  white-space: pre-wrap;
+  margin: 12px 0 0;
+  padding: 14px;
+  border: 1px solid rgba(164,255,218,.12);
+  border-radius: 12px;
+  background: rgba(0,0,0,.28);
+  color: #c8d6d1;
+  overflow: auto;
+}
+.graph span { display: inline-block; margin: 4px; padding: 5px 8px; border-radius: 999px; background: rgba(0,249,154,.08); color: var(--green); border: 1px solid rgba(0,249,154,.16); }
+.muted-pill { color: var(--muted); border-color: rgba(164,255,218,.14); box-shadow: none; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+@media (max-width: 1180px) {
+  .vault-shell { grid-template-columns: 1fr; }
+  .identity-rail { display: grid; grid-template-columns: auto 1fr; gap: 12px 20px; }
+  .rail-section, .palette { grid-column: 1 / -1; }
+}
+@media (max-width: 860px) {
+  .vault-shell { padding: 10px; }
+  .dashboard-grid, .hero-module, .search-module, .ask-module, .note-module, .related-module { display: block; grid-column: auto; }
+  .module { margin-bottom: 14px; }
+  .control-deck, .ask-deck { display: grid; grid-template-columns: 1fr; }
+  .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hero-module { grid-column: auto; }
+  .top-rail { align-items: stretch; flex-direction: column; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
 "#
 }
