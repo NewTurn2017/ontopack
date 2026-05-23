@@ -566,9 +566,13 @@ Host: localhost
         assert!(js.contains("function galleryCard"));
         assert!(js.contains("function keyframeStrip"));
         assert!(js.contains("frame.asset_url"));
+        assert!(js.contains("function timeToSeconds"));
+        assert!(js.contains("function seekDetailVideo"));
+        assert!(js.contains("data-seek"));
         assert!(css.contains(".media-preview"));
         assert!(css.contains(".gallery-card video"));
         assert!(css.contains(".keyframe-strip"));
+        assert!(css.contains(".keyframe-card[data-seek]"));
     }
 
     #[test]

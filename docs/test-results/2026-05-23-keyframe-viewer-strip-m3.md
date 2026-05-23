@@ -7,6 +7,7 @@ Goal: make locally extracted video keyframe assets visible to humans, not just w
 - `NoteDetail` and `GalleryItem` now expose parsed `keyframes[]` from the managed enrichment block.
 - Each keyframe includes `time`, `text`, optional `asset`, and optional safe `/assets/...` `asset_url`.
 - The embedded viewer renders a compact keyframe strip in gallery cards and selected note detail.
+- In selected note detail, Enter/Space/click on a keyframe seeks the source video to that timestamp.
 - Viewer tests now assert the keyframe rendering path is present.
 
 ## Validation
@@ -23,5 +24,5 @@ Goal: make locally extracted video keyframe assets visible to humans, not just w
 
 ## Known gaps
 
-- Keyframe strips are display-only; clicking a frame does not seek the source video yet.
+- Keyframe seek is implemented only for the selected note detail panel, not gallery cards.
 - The parser intentionally reads the existing Markdown managed block instead of introducing a second structured sidecar file.

@@ -255,16 +255,33 @@ function keyframeStrip(item, interactive = true) {
     const time = escapeHtml(frame.time || '');
     const label = escapeHtml(frame.text || 'keyframe');
     const src = frame.asset_url ? escapeHtml(frame.asset_url) : '';
+    const seek = timeToSeconds(frame.time);
     const media = src
       ? `<img src="${src}" alt="${label}" loading="lazy" decoding="async">`
       : `<span class="keyframe-token">FRAME</span>`;
-    return `<figure class="keyframe-card" title="${label}">
+    const attrs = interactive && seek !== null ? ` role="button" tabindex="0" data-seek="${seek}"` : '';
+    return `<figure class="keyframe-card"${attrs} title="${label}">
       ${media}
       <figcaption>${time}</figcaption>
     </figure>`;
   }).join('');
   const heading = interactive ? '<p class="meta keyframe-heading">KEYFRAMES</p>' : '';
   return `<div class="keyframe-strip" aria-label="video keyframes">${heading}${cards}</div>`;
+}
+
+function timeToSeconds(value) {
+  const parts = String(value || '').split(':').map((part) => Number.parseFloat(part));
+  if (!parts.length || parts.some((part) => Number.isNaN(part))) return null;
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return parts[0];
+}
+
+function seekDetailVideo(seconds) {
+  const video = $('note-detail').querySelector('video');
+  if (!video || Number.isNaN(seconds)) return;
+  video.currentTime = Math.max(0, seconds);
+  video.focus({ preventScroll: true });
 }
 
 function filterParams() {
@@ -408,6 +425,19 @@ async function openNote(id) {
   $('related').classList.remove('muted');
   $('related').innerHTML = related.related.length ? related.related.map((n) => card({ ...n, chunk_id: `depth ${n.depth}` })).join('') : '<p class="muted empty-state">관련 노트 없음</p>';
 }
+
+$('note-detail').addEventListener('click', (event) => {
+  const keyframe = event.target.closest('[data-seek]');
+  if (keyframe) seekDetailVideo(Number.parseFloat(keyframe.dataset.seek));
+});
+
+$('note-detail').addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  const keyframe = event.target.closest('[data-seek]');
+  if (!keyframe) return;
+  event.preventDefault();
+  seekDetailVideo(Number.parseFloat(keyframe.dataset.seek));
+});
 
 function renderTimeline(data) {
   $('timeline').innerHTML = data.notes.length ? data.notes.map((n) => card({ ...n, chunk_id: n.id, snippet: n.created || '' })).join('') : '<p class="muted empty-state">created 메타데이터가 있는 노트 없음</p>';
@@ -769,6 +799,11 @@ input::placeholder { color: rgba(216,229,224,.45); }
   border: 1px solid rgba(0,249,154,.16);
   border-radius: 10px;
   background: rgba(0,0,0,.34);
+}
+.keyframe-card[data-seek] { cursor: pointer; }
+.keyframe-card[data-seek]:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
 }
 .keyframe-card img {
   display: block;
