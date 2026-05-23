@@ -70,6 +70,10 @@ LLM 답변을 서버에서 직접 생성하지 않고 citation-ready context blo
 
 필터 UI에 필요한 type/tag/date 범위를 반환합니다.
 
+### `GET /api/dashboard?type=<type>&from=<date>&to=<date>&gallery_k=<n>&timeline_k=<n>&graph_limit=<n>`
+
+뷰어 시작/필터 변경 시 필요한 overview 데이터를 한 번에 반환합니다. 응답은 `facets`, `gallery`, `timeline`, `graph`를 포함하며, viewer는 이 API로 패널 초기 로딩 fan-out을 줄입니다.
+
 ### `GET /api/gallery?type=<type>&k=<n>`
 
 `asset` frontmatter가 있는 사이드카 노트를 갤러리 카드로 반환합니다. 각 항목은 실제 로컬 미디어를 표시할 수 있도록 `asset_url`, `media_kind`, `mime`을 포함합니다.

@@ -243,13 +243,28 @@ function setResultCount(count, querying = false) {
   $('result-count').classList.toggle('muted-pill', !querying && count === 0);
 }
 
-async function loadFacets() {
-  const facets = await fetchJson('/api/facets');
+function renderFacets(facets) {
+  const currentType = $('type-filter').value;
+  const currentTag = $('tag-filter').value;
   $('type-filter').innerHTML = '<option value="">모든 타입</option>' + facets.types.map((type) => `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`).join('');
   $('tag-filter').innerHTML = '<option value="">모든 태그</option>' + facets.tags.map((tag) => `<option value="${escapeHtml(tag)}">#${escapeHtml(tag)}</option>`).join('');
+  if (currentType && facets.types.includes(currentType)) $('type-filter').value = currentType;
+  if (currentTag && facets.tags.includes(currentTag)) $('tag-filter').value = currentTag;
   $('stat-types').textContent = facets.types.length;
   $('stat-tags').textContent = facets.tags.length;
   $('stat-dates').textContent = facets.created_min && facets.created_max ? `${facets.created_min.slice(5)}–${facets.created_max.slice(5)}` : 'NO DATE';
+}
+
+async function loadDashboard() {
+  const params = filterParams();
+  params.set('gallery_k', '12');
+  params.set('timeline_k', '10');
+  params.set('graph_limit', '80');
+  const data = await fetchJson(`/api/dashboard?${params.toString()}`);
+  renderFacets(data.facets);
+  renderTimeline(data.timeline);
+  renderGallery(data.gallery);
+  renderGraph(data.graph);
 }
 
 async function search(q) {
@@ -284,34 +299,21 @@ async function openNote(id) {
   $('related').innerHTML = related.related.length ? related.related.map((n) => card({ ...n, chunk_id: `depth ${n.depth}` })).join('') : '<p class="muted empty-state">관련 노트 없음</p>';
 }
 
-async function loadTimeline() {
-  const params = filterParams();
-  params.set('k', '10');
-  const data = await fetchJson(`/api/timeline?${params.toString()}`);
+function renderTimeline(data) {
   $('timeline').innerHTML = data.notes.length ? data.notes.map((n) => card({ ...n, chunk_id: n.id, snippet: n.created || '' })).join('') : '<p class="muted empty-state">created 메타데이터가 있는 노트 없음</p>';
 }
 
-async function loadGallery() {
-  const params = new URLSearchParams();
-  const type = $('type-filter').value;
-  if (type) params.set('type', type);
-  params.set('k', '12');
-  const data = await fetchJson(`/api/gallery?${params.toString()}`);
+function renderGallery(data) {
   $('gallery').innerHTML = data.items.length ? data.items.map(galleryCard).join('') : '<p class="muted empty-state">asset 사이드카 노트 없음</p>';
 }
 
-async function loadGraph() {
-  const params = new URLSearchParams();
-  const type = $('type-filter').value;
-  if (type) params.set('type', type);
-  params.set('limit', '80');
-  const graph = await fetchJson(`/api/graph?${params.toString()}`);
+function renderGraph(graph) {
   $('graph').innerHTML = `<p class="graph-count">${graph.nodes.length} nodes · ${graph.edges.length} links</p>` + graph.edges.slice(0, 80).map((e) => `<span>${escapeHtml(e.from)} → ${escapeHtml(e.to)}</span>`).join('');
 }
 
 async function refreshPanels() {
   updateFilterSummary();
-  await Promise.all([loadTimeline(), loadGallery(), loadGraph()]);
+  await loadDashboard();
 }
 
 async function refreshForFilters() {
@@ -353,7 +355,7 @@ document.body.addEventListener('keydown', async (event) => {
   await openNote(target.dataset.noteId);
 });
 
-loadFacets().then(refreshPanels).catch(console.error);
+loadDashboard().catch(console.error);
 "#
 }
 

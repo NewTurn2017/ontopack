@@ -166,6 +166,17 @@ fn route(pack: &Pack, target: &str) -> Result<HttpResponse> {
             json_response(api::ask(pack, q, read_usize(&query, "k", 5))?)
         }
         "/api/facets" => json_response(api::facets(pack)?),
+        "/api/dashboard" => json_response(api::dashboard(
+            pack,
+            api::DashboardFilters {
+                note_type: query.get("type").map(String::as_str),
+                from: query.get("from").map(String::as_str),
+                to: query.get("to").map(String::as_str),
+                gallery_k: read_usize(&query, "gallery_k", 12),
+                timeline_k: read_usize(&query, "timeline_k", 10),
+                graph_limit: read_usize(&query, "graph_limit", 80),
+            },
+        )?),
         "/api/gallery" => json_response(api::gallery(
             pack,
             query.get("type").map(String::as_str),
@@ -452,6 +463,8 @@ Host: localhost
         let js = viewer::app_js();
         assert!(js.contains("async function refreshForFilters()"));
         assert!(js.contains("q ? search(q) : Promise.resolve()"));
+        assert!(js.contains("loadDashboard()"));
+        assert!(js.contains("/api/dashboard"));
         assert!(js.contains("addEventListener('change', refreshForFilters)"));
     }
 
@@ -485,6 +498,42 @@ Host: localhost
         let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
         assert_eq!(body["answer_mode"], "external_llm_required");
         assert_eq!(body["context_blocks"][0]["note_id"], "hook");
+    }
+
+    #[test]
+    fn api_dashboard_http_returns_startup_panels() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(
+            root.join("notes/pic.md"),
+            "---
+type: image
+title: Pic
+asset: assets/pic.png
+tags: [gallery]
+created: 2026-02-01
+---
+캡션",
+        )
+        .unwrap();
+        let pack = Pack::open(&root).unwrap();
+        pack.build_index().unwrap();
+
+        let response = handle_request(
+            &pack,
+            "GET /api/dashboard?k=5 HTTP/1.1
+Host: localhost
+
+",
+        )
+        .unwrap();
+        assert_eq!(response.status, 200);
+        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(body["facets"]["types"][0], "image");
+        assert_eq!(body["gallery"]["items"][0]["asset_url"], "/assets/pic.png");
+        assert_eq!(body["timeline"]["notes"][0]["id"], "pic");
+        assert!(!body["graph"]["nodes"].as_array().unwrap().is_empty());
     }
 
     #[test]

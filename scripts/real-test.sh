@@ -177,6 +177,8 @@ assert_json "missing q returns json error" "$ERROR_JSON" '"missing query paramet
 echo "[6/10] viewer API facets/gallery/timeline/graph/note/related"
 FACETS_JSON="$(serve_json $'GET /api/facets HTTP/1.1\r\nHost: localhost\r\n\r\n')"
 assert_json "facets include prompt and ontology" "$FACETS_JSON" '"prompt" in v["types"] and "ontology" in v["tags"]'
+DASHBOARD_JSON="$(serve_json $'GET /api/dashboard?type=image&gallery_k=5&timeline_k=5&graph_limit=20 HTTP/1.1\r\nHost: localhost\r\n\r\n')"
+assert_json "dashboard aggregates facets gallery timeline graph" "$DASHBOARD_JSON" '"facets" in v and any(item["media_kind"] == "image" for item in v["gallery"]["items"]) and "notes" in v["timeline"] and "nodes" in v["graph"]'
 GALLERY_JSON="$(serve_json $'GET /api/gallery?k=5 HTTP/1.1\r\nHost: localhost\r\n\r\n')"
 assert_json "gallery includes evidence image asset metadata" "$GALLERY_JSON" 'any(item["asset"] == "assets/evidence.png" and item["asset_url"] == "/assets/evidence.png" and item["media_kind"] == "image" for item in v["items"])'
 assert_json "gallery includes video asset metadata" "$GALLERY_JSON" 'any(item["asset"] == "assets/demo.mp4" and item["asset_url"] == "/assets/demo.mp4" and item["media_kind"] == "video" for item in v["items"])'

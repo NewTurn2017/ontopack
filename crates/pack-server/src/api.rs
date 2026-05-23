@@ -122,6 +122,24 @@ pub struct GalleryResponse {
 }
 
 #[derive(Debug, Serialize, PartialEq)]
+pub struct DashboardResponse {
+    pub facets: FacetsResponse,
+    pub gallery: GalleryResponse,
+    pub timeline: TimelineResponse,
+    pub graph: GraphResponse,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct DashboardFilters<'a> {
+    pub note_type: Option<&'a str>,
+    pub from: Option<&'a str>,
+    pub to: Option<&'a str>,
+    pub gallery_k: usize,
+    pub timeline_k: usize,
+    pub graph_limit: usize,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
 pub struct GalleryItem {
     pub id: String,
     pub title: String,
@@ -328,6 +346,21 @@ pub fn gallery(pack: &Pack, note_type: Option<&str>, k: usize) -> Result<Gallery
         }
     }
     Ok(GalleryResponse { items })
+}
+
+pub fn dashboard(pack: &Pack, filters: DashboardFilters<'_>) -> Result<DashboardResponse> {
+    Ok(DashboardResponse {
+        facets: facets(pack)?,
+        gallery: gallery(pack, filters.note_type, filters.gallery_k)?,
+        timeline: timeline(
+            pack,
+            filters.from,
+            filters.to,
+            filters.note_type,
+            filters.timeline_k,
+        )?,
+        graph: graph(pack, filters.note_type, filters.graph_limit)?,
+    })
 }
 
 fn related_from_notes(

@@ -283,7 +283,11 @@ Remaining optimization: the first pass still materializes note rows from SQLite 
 
 ### 4.2 Viewer startup fans out multiple requests
 
-The browser loads facets, then refreshes timeline/gallery/graph. Filter changes can trigger search plus panel refreshes. On localhost this is acceptable, but the cost multiplies because backend handlers do repeated file scans.
+Status: first-pass fix implemented.
+
+The browser now uses `/api/dashboard` for initial facets/gallery/timeline/graph data and for filter-driven panel refreshes. Search remains a separate request only when a query exists. This reduces panel startup fan-out while preserving the existing embedded viewer.
+
+Remaining optimization: add request cancellation/timing metrics and consider endpoint-specific SQL if dashboard payloads grow too large.
 
 ### 4.3 Media is metadata-only
 
@@ -369,26 +373,28 @@ Acceptance:
 
 ### M5C — Add dashboard aggregate endpoint
 
+Status: first pass implemented.
+
 Goal: viewer startup becomes one or two requests, not many redundant scans.
 
 Backend tasks:
 
-- Add `GET /api/dashboard?type=&tag=&from=&to=` returning:
+- Implemented `GET /api/dashboard?type=&from=&to=&gallery_k=&timeline_k=&graph_limit=` returning:
   - facets
   - gallery preview
   - timeline preview
   - graph summary
-  - counts by type/media kind
+- Counts by media kind are still pending.
 
 Viewer tasks:
 
-- Replace `loadFacets().then(refreshPanels)` fan-out with one dashboard request on startup.
-- On filter changes, update dashboard once plus search only if a query exists.
+- Replaced `loadFacets().then(refreshPanels)` fan-out with one dashboard request on startup.
+- On filter changes, dashboard updates once plus search runs only if a query exists.
 
 Acceptance:
 
-- Initial dashboard data loads with one API request after static assets.
-- Filter changes cancel stale requests and do not produce race-condition flicker.
+- Initial dashboard panel data loads with one API request after static assets.
+- Filter changes use one dashboard request for panels; stale request cancellation is deferred to M5D.
 
 ### M5D — Faster, better search interaction
 
