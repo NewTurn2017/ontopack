@@ -44,6 +44,27 @@ pub struct TimelineNote {
     pub created: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GraphNode {
+    pub id: String,
+    pub title: String,
+    pub note_type: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GraphData {
+    pub nodes: Vec<GraphNode>,
+    pub edges: Vec<(String, String)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FacetValues {
+    pub types: Vec<String>,
+    pub tags: Vec<String>,
+    pub created_min: Option<String>,
+    pub created_max: Option<String>,
+}
+
 #[derive(Serialize)]
 struct AssetSidecarFrontMatter<'a> {
     #[serde(rename = "type")]
@@ -107,6 +128,73 @@ impl Pack {
             return Index::open(&index_path)?.all_notes();
         }
         self.scan_notes()
+    }
+
+    pub fn note_by_id_or_scan(&self, id: &str) -> Result<Option<Note>> {
+        let index_path = self.index_path();
+        if index_path.exists() {
+            return Index::open(&index_path)?.note_by_id(id);
+        }
+        Ok(self.scan_notes()?.into_iter().find(|note| note.id == id))
+    }
+
+    pub fn gallery_notes_or_scan(&self, note_type: Option<&str>, k: usize) -> Result<Vec<Note>> {
+        let index_path = self.index_path();
+        if index_path.exists() {
+            return Index::open(&index_path)?.gallery_notes(note_type, k);
+        }
+        let mut items = Vec::new();
+        for note in self.scan_notes()? {
+            if note.asset.is_none()
+                || note_type.is_some_and(|note_type| note.note_type != note_type)
+            {
+                continue;
+            }
+            items.push(note);
+            if items.len() >= k.max(1) {
+                break;
+            }
+        }
+        Ok(items)
+    }
+
+    pub fn timeline_notes_or_scan(
+        &self,
+        from: Option<&str>,
+        to: Option<&str>,
+        note_type: Option<&str>,
+        k: usize,
+    ) -> Result<Vec<TimelineNote>> {
+        let index_path = self.index_path();
+        if index_path.exists() {
+            return Index::open(&index_path)?.timeline_notes(from, to, note_type, k);
+        }
+        self.timeline_notes(from, to, note_type, k)
+    }
+
+    pub fn related_notes_or_scan(&self, note_id: &str, depth: usize) -> Result<Vec<RelatedNote>> {
+        let index_path = self.index_path();
+        if index_path.exists() {
+            return Index::open(&index_path)?.related_notes(note_id, depth);
+        }
+        self.related_notes(note_id, depth)
+    }
+
+    pub fn graph_or_scan(&self, note_type: Option<&str>, limit: usize) -> Result<GraphData> {
+        let index_path = self.index_path();
+        if index_path.exists() {
+            return Index::open(&index_path)?.graph(note_type, limit);
+        }
+        let notes = self.scan_notes()?;
+        Ok(graph_from_notes(&notes, note_type, limit))
+    }
+
+    pub fn facets_or_scan(&self) -> Result<FacetValues> {
+        let index_path = self.index_path();
+        if index_path.exists() {
+            return Index::open(&index_path)?.facets();
+        }
+        Ok(facets_from_notes(self.scan_notes()?))
     }
 
     /// 인덱스 DB 경로 (.pack/index.db)
@@ -349,6 +437,54 @@ impl Pack {
         let keyword = idx.search_keyword_chunks(query, k)?;
         let vector = idx.search_vector_chunk_hits(query, k, embedder)?;
         Ok(rrf_fuse(&keyword, &vector, k))
+    }
+}
+
+fn graph_from_notes(notes: &[Note], note_type: Option<&str>, limit: usize) -> GraphData {
+    let mut nodes = Vec::new();
+    let mut included = std::collections::HashSet::new();
+    for note in notes
+        .iter()
+        .filter(|note| note_type.is_none_or(|note_type| note.note_type == note_type))
+        .take(limit)
+    {
+        included.insert(note.id.clone());
+        nodes.push(GraphNode {
+            id: note.id.clone(),
+            title: note.title.clone(),
+            note_type: note.note_type.clone(),
+        });
+    }
+    let edges = notes
+        .iter()
+        .filter(|note| included.contains(&note.id))
+        .flat_map(|note| {
+            note.related
+                .iter()
+                .filter(|to| included.contains(*to))
+                .map(|to| (note.id.clone(), to.clone()))
+        })
+        .collect();
+    GraphData { nodes, edges }
+}
+
+fn facets_from_notes(notes: Vec<Note>) -> FacetValues {
+    let mut types = std::collections::BTreeSet::new();
+    let mut tags = std::collections::BTreeSet::new();
+    let mut created_values = Vec::new();
+    for note in notes {
+        types.insert(note.note_type);
+        tags.extend(note.tags);
+        if let Some(created) = note.created {
+            created_values.push(created);
+        }
+    }
+    created_values.sort();
+    FacetValues {
+        types: types.into_iter().collect(),
+        tags: tags.into_iter().collect(),
+        created_min: created_values.first().cloned(),
+        created_max: created_values.last().cloned(),
     }
 }
 

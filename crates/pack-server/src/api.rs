@@ -241,11 +241,7 @@ pub fn ask(pack: &Pack, question: &str, k: usize) -> Result<AskResponse> {
 }
 
 pub fn note(pack: &Pack, id: &str) -> Result<NoteDetail> {
-    let Some(note) = pack
-        .indexed_notes_or_scan()?
-        .into_iter()
-        .find(|note| note.id == id)
-    else {
+    let Some(note) = pack.note_by_id_or_scan(id)? else {
         bail!("note not found: {id}");
     };
     let media = media_metadata(note.asset.as_deref());
@@ -268,7 +264,8 @@ pub fn note(pack: &Pack, id: &str) -> Result<NoteDetail> {
 pub fn related(pack: &Pack, note_id: &str, depth: usize) -> Result<RelatedResponse> {
     Ok(RelatedResponse {
         note_id: note_id.to_string(),
-        related: related_from_notes(&pack.indexed_notes_or_scan()?, note_id, depth)
+        related: pack
+            .related_notes_or_scan(note_id, depth)?
             .into_iter()
             .map(|note| RelatedCard {
                 id: note.id,
@@ -289,7 +286,8 @@ pub fn timeline(
     k: usize,
 ) -> Result<TimelineResponse> {
     Ok(TimelineResponse {
-        notes: timeline_from_notes(&pack.indexed_notes_or_scan()?, from, to, note_type, k)
+        notes: pack
+            .timeline_notes_or_scan(from, to, note_type, k)?
             .into_iter()
             .map(|note| TimelineCard {
                 id: note.id,
@@ -303,63 +301,37 @@ pub fn timeline(
 }
 
 pub fn graph(pack: &Pack, note_type: Option<&str>, limit: usize) -> Result<GraphResponse> {
-    let notes = pack.indexed_notes_or_scan()?;
-    let mut nodes = Vec::new();
-    let mut included = std::collections::HashSet::new();
-    for note in notes
-        .iter()
-        .filter(|note| note_type.is_none_or(|note_type| note.note_type == note_type))
-        .take(limit)
-    {
-        included.insert(note.id.clone());
-        nodes.push(GraphNode {
-            id: note.id.clone(),
-            title: note.title.clone(),
-            note_type: note.note_type.clone(),
-        });
-    }
-    let edges = notes
-        .iter()
-        .filter(|note| included.contains(&note.id))
-        .flat_map(|note| {
-            note.related
-                .iter()
-                .filter(|to| included.contains(*to))
-                .map(|to| GraphEdge {
-                    from: note.id.clone(),
-                    to: to.clone(),
-                })
+    let graph = pack.graph_or_scan(note_type, limit)?;
+    let nodes = graph
+        .nodes
+        .into_iter()
+        .map(|node| GraphNode {
+            id: node.id,
+            title: node.title,
+            note_type: node.note_type,
         })
+        .collect();
+    let edges = graph
+        .edges
+        .into_iter()
+        .map(|(from, to)| GraphEdge { from, to })
         .collect();
     Ok(GraphResponse { nodes, edges })
 }
 
 pub fn facets(pack: &Pack) -> Result<FacetsResponse> {
-    let mut types = std::collections::BTreeSet::new();
-    let mut tags = std::collections::BTreeSet::new();
-    let mut created_values = Vec::new();
-    for note in pack.indexed_notes_or_scan()? {
-        types.insert(note.note_type);
-        tags.extend(note.tags);
-        if let Some(created) = note.created {
-            created_values.push(created);
-        }
-    }
-    created_values.sort();
+    let facets = pack.facets_or_scan()?;
     Ok(FacetsResponse {
-        types: types.into_iter().collect(),
-        tags: tags.into_iter().collect(),
-        created_min: created_values.first().cloned(),
-        created_max: created_values.last().cloned(),
+        types: facets.types,
+        tags: facets.tags,
+        created_min: facets.created_min,
+        created_max: facets.created_max,
     })
 }
 
 pub fn gallery(pack: &Pack, note_type: Option<&str>, k: usize) -> Result<GalleryResponse> {
     let mut items = Vec::new();
-    for note in pack.indexed_notes_or_scan()? {
-        if note.asset.is_none() || note_type.is_some_and(|note_type| note.note_type != note_type) {
-            continue;
-        }
+    for note in pack.gallery_notes_or_scan(note_type, k)? {
         let media = media_metadata(note.asset.as_deref());
         items.push(GalleryItem {
             id: note.id,
@@ -373,9 +345,6 @@ pub fn gallery(pack: &Pack, note_type: Option<&str>, k: usize) -> Result<Gallery
             path: note.path.to_string_lossy().to_string(),
             caption: note.body.trim().to_string(),
         });
-        if items.len() >= k.max(1) {
-            break;
-        }
     }
     Ok(GalleryResponse { items })
 }
@@ -427,72 +396,6 @@ pub fn capabilities(pack: &Pack) -> CapabilitiesResponse {
             },
         ],
     }
-}
-
-fn related_from_notes(
-    notes: &[pack_core::note::Note],
-    note_id: &str,
-    depth: usize,
-) -> Vec<pack_core::pack::RelatedNote> {
-    let by_id: std::collections::HashMap<String, &pack_core::note::Note> =
-        notes.iter().map(|note| (note.id.clone(), note)).collect();
-    let mut out = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    let mut queue = std::collections::VecDeque::from([(note_id.to_string(), 0usize)]);
-
-    while let Some((current_id, current_depth)) = queue.pop_front() {
-        if current_depth >= depth {
-            continue;
-        }
-        let Some(current) = by_id.get(&current_id) else {
-            continue;
-        };
-        for next_id in &current.related {
-            if !seen.insert(next_id.clone()) || next_id == note_id {
-                continue;
-            }
-            if let Some(next) = by_id.get(next_id) {
-                let next_depth = current_depth + 1;
-                out.push(pack_core::pack::RelatedNote {
-                    id: next.id.clone(),
-                    title: next.title.clone(),
-                    note_type: next.note_type.clone(),
-                    path: next.path.clone(),
-                    depth: next_depth,
-                });
-                queue.push_back((next_id.clone(), next_depth));
-            }
-        }
-    }
-    out
-}
-
-fn timeline_from_notes(
-    notes: &[pack_core::note::Note],
-    from: Option<&str>,
-    to: Option<&str>,
-    note_type: Option<&str>,
-    k: usize,
-) -> Vec<pack_core::pack::TimelineNote> {
-    let mut notes: Vec<_> = notes
-        .iter()
-        .filter(|note| note_type.is_none_or(|t| note.note_type == t))
-        .filter(|note| {
-            note.created.as_deref().is_some_and(|created| {
-                from.is_none_or(|from| created >= from) && to.is_none_or(|to| created <= to)
-            })
-        })
-        .map(|note| pack_core::pack::TimelineNote {
-            id: note.id.clone(),
-            title: note.title.clone(),
-            note_type: note.note_type.clone(),
-            path: note.path.clone(),
-            created: note.created.clone(),
-        })
-        .collect();
-    notes.sort_by(|a, b| b.created.cmp(&a.created).then_with(|| a.id.cmp(&b.id)));
-    notes.truncate(k);
-    notes
 }
 
 fn search_card(hit: SearchHit) -> SearchCard {

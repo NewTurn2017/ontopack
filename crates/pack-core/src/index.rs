@@ -1,7 +1,7 @@
 use crate::note::Note;
 use anyhow::{anyhow, Result};
 use rusqlite::{
-    params, params_from_iter, types::Value, Connection, OptionalExtension, Transaction,
+    params, params_from_iter, types::Value, Connection, OptionalExtension, Row, Transaction,
 };
 use std::path::Path;
 use std::sync::Once;
@@ -59,6 +59,11 @@ CREATE TABLE IF NOT EXISTS chunks (
   FOREIGN KEY(note_id) REFERENCES notes(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_chunks_note_ord ON chunks(note_id, ord);
+CREATE INDEX IF NOT EXISTS idx_notes_type ON notes(type);
+CREATE INDEX IF NOT EXISTS idx_notes_created ON notes(created);
+CREATE INDEX IF NOT EXISTS idx_notes_asset ON notes(asset);
+CREATE INDEX IF NOT EXISTS idx_edges_src ON edges(src);
+CREATE INDEX IF NOT EXISTS idx_edges_dst ON edges(dst);
 ";
 
 impl Index {
@@ -355,23 +360,7 @@ impl Index {
              FROM notes
              ORDER BY id",
         )?;
-        let rows = stmt.query_map([], |r| {
-            let id: String = r.get(0)?;
-            let tags_json: String = r.get(4)?;
-            let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
-            Ok(Note {
-                id,
-                path: std::path::PathBuf::from(r.get::<_, String>(1)?),
-                note_type: r.get(2)?,
-                title: r.get(3)?,
-                tags,
-                created: r.get(5)?,
-                asset: r.get(6)?,
-                related: Vec::new(),
-                body: r.get(7)?,
-                mtime: r.get(8)?,
-            })
-        })?;
+        let rows = stmt.query_map([], note_from_row)?;
         let mut notes = Vec::new();
         for row in rows {
             let mut note = row?;
@@ -380,6 +369,220 @@ impl Index {
         }
         Ok(notes)
     }
+
+    pub fn note_by_id(&self, id: &str) -> Result<Option<Note>> {
+        let mut note = self
+            .conn
+            .query_row(
+                "SELECT id, path, type, title, tags, created, asset, body, mtime
+                 FROM notes
+                 WHERE id = ?1",
+                [id],
+                note_from_row,
+            )
+            .optional()?;
+        if let Some(note) = &mut note {
+            note.related = collect_related_for_note(&self.conn, &note.id)?;
+        }
+        Ok(note)
+    }
+
+    pub fn gallery_notes(&self, note_type: Option<&str>, k: usize) -> Result<Vec<Note>> {
+        let mut sql = String::from(
+            "SELECT id, path, type, title, tags, created, asset, body, mtime
+             FROM notes
+             WHERE asset IS NOT NULL",
+        );
+        let mut values = Vec::new();
+        if let Some(note_type) = note_type {
+            sql.push_str(" AND type = ?");
+            values.push(Value::Text(note_type.to_string()));
+        }
+        sql.push_str(" ORDER BY id LIMIT ?");
+        values.push(Value::Integer(k.max(1) as i64));
+
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params_from_iter(values.iter()), note_from_row)?;
+        let mut notes = Vec::new();
+        for row in rows {
+            notes.push(row?);
+        }
+        Ok(notes)
+    }
+
+    pub fn timeline_notes(
+        &self,
+        from: Option<&str>,
+        to: Option<&str>,
+        note_type: Option<&str>,
+        k: usize,
+    ) -> Result<Vec<crate::pack::TimelineNote>> {
+        let mut sql = String::from(
+            "SELECT id, title, type, path, created
+             FROM notes
+             WHERE created IS NOT NULL",
+        );
+        let mut values = Vec::new();
+        if let Some(note_type) = note_type {
+            sql.push_str(" AND type = ?");
+            values.push(Value::Text(note_type.to_string()));
+        }
+        if let Some(from) = from {
+            sql.push_str(" AND created >= ?");
+            values.push(Value::Text(from.to_string()));
+        }
+        if let Some(to) = to {
+            sql.push_str(" AND created <= ?");
+            values.push(Value::Text(to.to_string()));
+        }
+        sql.push_str(" ORDER BY created DESC, id ASC LIMIT ?");
+        values.push(Value::Integer(k as i64));
+
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params_from_iter(values.iter()), |r| {
+            Ok(crate::pack::TimelineNote {
+                id: r.get(0)?,
+                title: r.get(1)?,
+                note_type: r.get(2)?,
+                path: std::path::PathBuf::from(r.get::<_, String>(3)?),
+                created: r.get(4)?,
+            })
+        })?;
+        let mut notes = Vec::new();
+        for row in rows {
+            notes.push(row?);
+        }
+        Ok(notes)
+    }
+
+    pub fn related_notes(
+        &self,
+        note_id: &str,
+        depth: usize,
+    ) -> Result<Vec<crate::pack::RelatedNote>> {
+        let mut out = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        let mut queue = std::collections::VecDeque::from([(note_id.to_string(), 0usize)]);
+
+        while let Some((current_id, current_depth)) = queue.pop_front() {
+            if current_depth >= depth {
+                continue;
+            }
+            for next_id in collect_related_for_note(&self.conn, &current_id)? {
+                if !seen.insert(next_id.clone()) || next_id == note_id {
+                    continue;
+                }
+                if let Some(next) = self.note_by_id(&next_id)? {
+                    let next_depth = current_depth + 1;
+                    out.push(crate::pack::RelatedNote {
+                        id: next.id.clone(),
+                        title: next.title.clone(),
+                        note_type: next.note_type.clone(),
+                        path: next.path.clone(),
+                        depth: next_depth,
+                    });
+                    queue.push_back((next_id, next_depth));
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    pub fn graph(&self, note_type: Option<&str>, limit: usize) -> Result<crate::pack::GraphData> {
+        let mut values = Vec::new();
+        let mut sql = String::from("SELECT id, title, type FROM notes");
+        if let Some(note_type) = note_type {
+            sql.push_str(" WHERE type = ?");
+            values.push(Value::Text(note_type.to_string()));
+        }
+        sql.push_str(" ORDER BY id LIMIT ?");
+        values.push(Value::Integer(limit as i64));
+
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params_from_iter(values.iter()), |r| {
+            Ok(crate::pack::GraphNode {
+                id: r.get(0)?,
+                title: r.get(1)?,
+                note_type: r.get(2)?,
+            })
+        })?;
+        let mut nodes = Vec::new();
+        for row in rows {
+            nodes.push(row?);
+        }
+
+        let included: std::collections::HashSet<_> =
+            nodes.iter().map(|node| node.id.as_str()).collect();
+        if included.is_empty() {
+            return Ok(crate::pack::GraphData {
+                nodes,
+                edges: Vec::new(),
+            });
+        }
+
+        let mut stmt = self
+            .conn
+            .prepare("SELECT src, dst FROM edges ORDER BY src, dst")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        let mut edges = Vec::new();
+        for row in rows {
+            let (src, dst) = row?;
+            if included.contains(src.as_str()) && included.contains(dst.as_str()) {
+                edges.push((src, dst));
+            }
+        }
+        Ok(crate::pack::GraphData { nodes, edges })
+    }
+
+    pub fn facets(&self) -> Result<crate::pack::FacetValues> {
+        let mut types = Vec::new();
+        let mut stmt = self
+            .conn
+            .prepare("SELECT DISTINCT type FROM notes ORDER BY type")?;
+        let rows = stmt.query_map([], |r| r.get(0))?;
+        for row in rows {
+            types.push(row?);
+        }
+
+        let mut tags = std::collections::BTreeSet::new();
+        let mut stmt = self.conn.prepare("SELECT tags FROM notes")?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        for row in rows {
+            let tags_json = row?;
+            let parsed: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
+            tags.extend(parsed);
+        }
+
+        let (created_min, created_max) = self.conn.query_row(
+            "SELECT min(created), max(created) FROM notes WHERE created IS NOT NULL",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+
+        Ok(crate::pack::FacetValues {
+            types,
+            tags: tags.into_iter().collect(),
+            created_min,
+            created_max,
+        })
+    }
+}
+
+fn note_from_row(r: &Row<'_>) -> rusqlite::Result<Note> {
+    let tags_json: String = r.get(4)?;
+    let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
+    Ok(Note {
+        id: r.get(0)?,
+        path: std::path::PathBuf::from(r.get::<_, String>(1)?),
+        note_type: r.get(2)?,
+        title: r.get(3)?,
+        tags,
+        created: r.get(5)?,
+        asset: r.get(6)?,
+        related: Vec::new(),
+        body: r.get(7)?,
+        mtime: r.get(8)?,
+    })
 }
 
 fn collect_related_for_note(conn: &Connection, note_id: &str) -> Result<Vec<String>> {
@@ -918,5 +1121,56 @@ mod tests {
 
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].note_id, "target");
+    }
+
+    #[test]
+    fn endpoint_specific_index_reads_return_filtered_rows() {
+        let mut idx = Index::open_in_memory().unwrap();
+        let mut image = parse_str(
+            "image",
+            "---\ntype: image\ntitle: Image\ntags: [gallery, visual]\ncreated: 2026-05-20\nasset: assets/image.png\nrelated: [prompt]\n---\n캡션",
+        )
+        .unwrap();
+        image.path = "notes/image.md".into();
+        let mut prompt = parse_str(
+            "prompt",
+            "---\ntype: prompt\ntitle: Prompt\ntags: [needle]\ncreated: 2026-05-21\nrelated: [image]\n---\n본문",
+        )
+        .unwrap();
+        prompt.path = "notes/prompt.md".into();
+        idx.rebuild(&[image, prompt]).unwrap();
+
+        let note = idx.note_by_id("image").unwrap().unwrap();
+        assert_eq!(note.title, "Image");
+        assert_eq!(note.related, vec!["prompt"]);
+
+        let gallery = idx.gallery_notes(Some("image"), 10).unwrap();
+        assert_eq!(
+            gallery
+                .iter()
+                .map(|note| note.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["image"]
+        );
+
+        let timeline = idx
+            .timeline_notes(Some("2026-05-21"), Some("2026-05-21"), Some("prompt"), 10)
+            .unwrap();
+        assert_eq!(timeline[0].id, "prompt");
+
+        let related = idx.related_notes("image", 1).unwrap();
+        assert_eq!(related[0].id, "prompt");
+
+        let graph = idx.graph(None, 10).unwrap();
+        assert_eq!(graph.nodes.len(), 2);
+        assert!(graph
+            .edges
+            .contains(&("image".to_string(), "prompt".to_string())));
+
+        let facets = idx.facets().unwrap();
+        assert_eq!(facets.types, vec!["image", "prompt"]);
+        assert!(facets.tags.contains(&"gallery".to_string()));
+        assert_eq!(facets.created_min.as_deref(), Some("2026-05-20"));
+        assert_eq!(facets.created_max.as_deref(), Some("2026-05-21"));
     }
 }

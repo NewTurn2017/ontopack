@@ -279,9 +279,11 @@ Status: first-pass fix implemented.
 
 The viewer APIs now prefer `.pack/index.db` rows when the index exists and fall back to source markdown scanning only for unbuilt packs. This removes repeated markdown parsing from note detail, related, timeline, graph, facets, and gallery in the normal `pack build` → `pack open` path.
 
-Benchmark status: `scripts/perf-benchmark.sh` now measures a persistent local server against a synthetic pack. On 2026-05-23 with 1,200 notes / 120 media notes, keyword search stayed fast (`search_needle` p50 0.982ms, `search_common` p50 3.001ms), while APIs that materialize all indexed notes were slower (`dashboard_all` p50 37.179ms, gallery/timeline/graph/note/related around 9ms p50).
+Benchmark status: `scripts/perf-benchmark.sh` measures a persistent local server against a synthetic pack. On 2026-05-23 with 1,200 notes / 120 media notes, M5F showed that keyword search was already fast while APIs materializing all indexed notes were slower (`dashboard_all` p50 37.179ms, gallery/timeline/graph/note/related around 9ms p50).
 
-Remaining optimization: the first pass still materializes note rows from SQLite per request. Dashboard batching reduces startup fan-out, but the benchmark confirms the next backend speed slice should add narrower endpoint-specific SQLite queries for dashboard/facets/gallery/timeline/graph/note/related.
+M5G implemented endpoint-specific SQLite reads for note detail, related, timeline, graph, facets, and gallery. On the same fixture, `dashboard_all` improved to 5.589ms p50, gallery to 1.408ms, timeline to 0.628ms, graph to 1.794ms, note detail to 0.430ms, and related to 0.393ms.
+
+Remaining optimization: run a larger 10k-note benchmark and specialize dashboard/facets payloads if very large tag sets become the next startup bottleneck.
 
 ### 4.2 Viewer startup fans out multiple requests
 
@@ -467,8 +469,9 @@ Acceptance:
 2. **Indexed gallery/timeline/facets/note APIs** — biggest backend speed win.
 3. **Dashboard aggregate endpoint** — biggest viewer startup/perceived speed win.
 4. **Search snippet improvement + timing metrics** — makes search feel smarter and measurable.
-5. **Synthetic performance benchmark** — implemented; confirms endpoint-specific SQL is the next speed slice.
-6. **Vector/hybrid server mode** — only after fast keyword/media path is stable.
+5. **Synthetic performance benchmark** — implemented; confirmed endpoint-specific SQL was the next speed slice.
+6. **Endpoint-specific SQLite reads** — implemented; main non-search viewer APIs now avoid full note materialization.
+7. **Vector/hybrid server mode** — only after fast keyword/media path is stable.
 
 ## 7. Test strategy for the next phase
 
