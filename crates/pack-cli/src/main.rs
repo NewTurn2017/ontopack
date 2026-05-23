@@ -5,8 +5,10 @@ use clap::{Parser, Subcommand, ValueEnum};
 use pack_core::enrichment::EnrichmentPatch;
 use pack_core::pack::{find_pack_root, AddOutcome, Pack, PackObject, PackStatus};
 use pack_core::search::{RankSource, SearchHit};
+use serde_json::json;
+use std::io::Write;
 use std::path::PathBuf;
-use std::process::Command as ProcessCommand;
+use std::process::{Command as ProcessCommand, Stdio};
 
 #[derive(Parser)]
 #[command(name = "pack", about = "ontopack — 로컬 지식 팩 CLI")]
@@ -66,6 +68,21 @@ enum Commands {
         /// enrichment model 이름
         #[arg(long)]
         model: Option<String>,
+    },
+    /// pending media sidecar를 외부 provider command로 자동 enrichment한다
+    EnrichPending {
+        /// JSON stdin을 받아 EnrichmentPatch JSON stdout을 반환하는 provider 실행 파일
+        #[arg(long)]
+        provider_command: PathBuf,
+        /// provider command에 추가로 전달할 인자. 여러 번 지정 가능
+        #[arg(long = "provider-arg")]
+        provider_args: Vec<String>,
+        /// 처리할 최대 pending 객체 수
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+        /// 처리 후 검색 인덱스 재빌드를 건너뛴다
+        #[arg(long)]
+        no_rebuild: bool,
     },
     /// 인덱스를 (재)빌드한다
     Build {
@@ -208,6 +225,32 @@ fn main() -> Result<()> {
             let path = pack.update_enrichment(&note_id, &patch)?;
             println!("enrichment 업데이트: {}", path.display());
         }
+        Commands::EnrichPending {
+            provider_command,
+            provider_args,
+            limit,
+            no_rebuild,
+        } => {
+            let root = find_pack_root(&std::env::current_dir()?)?;
+            let pack = Pack::open(&root)?;
+            let report =
+                enrich_pending_with_command(&pack, &provider_command, &provider_args, limit)?;
+            let indexed = if !no_rebuild && report.processed > 0 {
+                Some(pack.build_index()?)
+            } else {
+                None
+            };
+            let manifest = pack.refresh_object_manifest()?;
+            println!(
+                "enrichment worker 완료: processed={} skipped={} indexed={} manifest={}",
+                report.processed,
+                report.skipped,
+                indexed
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "-".to_string()),
+                manifest.display()
+            );
+        }
         Commands::Build {
             incremental,
             no_embed,
@@ -289,6 +332,88 @@ fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+struct EnrichPendingReport {
+    processed: usize,
+    skipped: usize,
+}
+
+fn enrich_pending_with_command(
+    pack: &Pack,
+    provider_command: &std::path::Path,
+    provider_args: &[String],
+    limit: usize,
+) -> Result<EnrichPendingReport> {
+    let mut pending = pack.pending_enrichment_objects()?;
+    pending.truncate(limit);
+    let notes = pack.scan_notes()?;
+    let mut by_id = std::collections::HashMap::new();
+    for note in notes {
+        by_id.insert(note.id.clone(), note);
+    }
+
+    let mut processed = 0usize;
+    let mut skipped = 0usize;
+    for object in pending {
+        let Some(note) = by_id.get(&object.note_id) else {
+            skipped += 1;
+            continue;
+        };
+        let raw = std::fs::read_to_string(&note.path)?;
+        let asset_abs_path = note
+            .asset
+            .as_ref()
+            .map(|asset| pack.root.join(asset).to_string_lossy().to_string());
+        let payload = json!({
+            "note_id": note.id,
+            "title": note.title,
+            "note_type": note.note_type,
+            "tags": note.tags,
+            "created": note.created,
+            "related": note.related,
+            "note_path": note.path.to_string_lossy(),
+            "asset_path": note.asset,
+            "asset_abs_path": asset_abs_path,
+            "body": note.body,
+            "raw": raw,
+            "content_hash": object.content_hash
+        });
+        let patch = run_provider_command(provider_command, provider_args, &payload)?;
+        pack.update_enrichment(&note.id, &patch)?;
+        processed += 1;
+    }
+
+    Ok(EnrichPendingReport { processed, skipped })
+}
+
+fn run_provider_command(
+    provider_command: &std::path::Path,
+    provider_args: &[String],
+    payload: &serde_json::Value,
+) -> Result<EnrichmentPatch> {
+    let mut child = ProcessCommand::new(provider_command)
+        .args(provider_args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    {
+        let stdin = child
+            .stdin
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("provider stdin을 열 수 없습니다"))?;
+        serde_json::to_writer(&mut *stdin, payload)?;
+        stdin.write_all(b"\n")?;
+    }
+    let output = child.wait_with_output()?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "provider command failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(serde_json::from_slice(&output.stdout)?)
 }
 
 fn print_search_hit(hit: &SearchHit) {

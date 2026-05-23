@@ -70,3 +70,14 @@ printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n' \
 ```
 
 응답의 `serverInfo.name`이 `ontopack`이면 stdio 초기화 경로가 정상입니다. 서버는 MCP `2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05` 초기화 버전을 지원하며, 클라이언트가 지원 버전을 요청하면 같은 버전으로 응답하고 알 수 없는 버전은 최신 지원 버전으로 협상합니다.
+
+
+## Provider command worker loop
+
+CLI에서 MCP와 같은 저장 계약을 한 번에 실행하려면 provider 명령을 JSON stdin/stdout으로 연결합니다.
+
+```bash
+pack enrich-pending --provider-command ./my-media-worker --limit 10
+```
+
+Provider 명령은 sidecar/asset payload JSON을 stdin으로 받고 `caption`, `tags`, `ocr`, `transcript`, `summary`, `keyframes`, `provider`, `model` 필드를 가진 enrichment patch JSON을 stdout으로 반환해야 합니다. `pack enrich-pending`은 사람이 쓴 sidecar 본문을 보존하면서 managed block만 갱신하고, 기본적으로 검색 인덱스를 재빌드합니다. 검색 재빌드를 미루려면 `--no-rebuild`를 사용하세요.

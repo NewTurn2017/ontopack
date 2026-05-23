@@ -516,3 +516,89 @@ fn enrich_note_preserves_sidecar_and_makes_caption_searchable() {
         .success()
         .stdout(predicate::str::contains("done_enrichment=1"));
 }
+
+#[test]
+fn enrich_pending_runs_provider_command_and_rebuilds_search() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("p");
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", root.to_str().unwrap()])
+        .assert()
+        .success();
+
+    let img = dir.path().join("dashboard.png");
+    std::fs::write(&img, [0x89, 0x50, 0x4e, 0x47]).unwrap();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["add", img.to_str().unwrap(), "--type", "image"])
+        .assert()
+        .success();
+
+    let provider = dir.path().join("provider.py");
+    std::fs::write(
+        &provider,
+        r#"#!/usr/bin/env python3
+import json, sys
+payload = json.load(sys.stdin)
+assert payload["note_id"] == "dashboard"
+assert payload["asset_abs_path"].endswith("assets/dashboard.png")
+json.dump({
+    "caption": "AI worker saw a neon ontology dashboard",
+    "tags": ["worker", "ontology"],
+    "summary": "Provider command generated this enrichment.",
+    "provider": "command-test",
+    "model": "fixture"
+}, sys.stdout)
+"#,
+    )
+    .unwrap();
+    make_executable(&provider);
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args([
+            "enrich-pending",
+            "--provider-command",
+            provider.to_str().unwrap(),
+            "--limit",
+            "1",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("processed=1"))
+        .stdout(predicate::str::contains("indexed=1"));
+
+    let sidecar = std::fs::read_to_string(root.join("notes/dashboard.md")).unwrap();
+    assert!(sidecar.contains("캡션을 적어주세요"));
+    assert!(sidecar.contains("AI worker saw a neon ontology dashboard"));
+    assert!(root.join(".pack/objects.jsonl").exists());
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["search", "neon"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("dashboard#0000"));
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["list", "--pending-enrichment"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("객체 없음"));
+}
+
+#[cfg(unix)]
+fn make_executable(path: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = std::fs::metadata(path).unwrap().permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(path, perms).unwrap();
+}
+
+#[cfg(not(unix))]
+fn make_executable(_path: &std::path::Path) {}
