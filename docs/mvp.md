@@ -110,6 +110,16 @@ scripts/mvp-smoke.sh
 MVP smoke passed: CLI + MCP + viewer API + open URL
 ```
 
+## 6. 실제형 테스트 준비
+
+MVP smoke가 통과한 뒤에는 실제 강의/자료 pack 흐름을 검증합니다.
+
+```bash
+scripts/real-test.sh
+```
+
+자세한 범위와 수동 브라우저 체크리스트는 `docs/real-test.md`를 보세요. 실제 BGE-M3/FastEmbed 경로는 네트워크/모델 다운로드가 필요하므로 기본 gate와 분리되어 있으며, 필요할 때만 `RUN_REAL_EMBED=1 scripts/real-test.sh`로 실행합니다.
+
 ## MVP 범위와 다음 단계
 
 MVP 포함:
