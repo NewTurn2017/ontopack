@@ -279,7 +279,9 @@ Status: first-pass fix implemented.
 
 The viewer APIs now prefer `.pack/index.db` rows when the index exists and fall back to source markdown scanning only for unbuilt packs. This removes repeated markdown parsing from note detail, related, timeline, graph, facets, and gallery in the normal `pack build` → `pack open` path.
 
-Remaining optimization: the first pass still materializes note rows from SQLite per request. Dashboard batching now reduces startup fan-out; later M5B refinements can add narrower SQL queries for each endpoint.
+Benchmark status: `scripts/perf-benchmark.sh` now measures a persistent local server against a synthetic pack. On 2026-05-23 with 1,200 notes / 120 media notes, keyword search stayed fast (`search_needle` p50 0.982ms, `search_common` p50 3.001ms), while APIs that materialize all indexed notes were slower (`dashboard_all` p50 37.179ms, gallery/timeline/graph/note/related around 9ms p50).
+
+Remaining optimization: the first pass still materializes note rows from SQLite per request. Dashboard batching reduces startup fan-out, but the benchmark confirms the next backend speed slice should add narrower endpoint-specific SQLite queries for dashboard/facets/gallery/timeline/graph/note/related.
 
 ### 4.2 Viewer startup fans out multiple requests
 
@@ -465,7 +467,8 @@ Acceptance:
 2. **Indexed gallery/timeline/facets/note APIs** — biggest backend speed win.
 3. **Dashboard aggregate endpoint** — biggest viewer startup/perceived speed win.
 4. **Search snippet improvement + timing metrics** — makes search feel smarter and measurable.
-5. **Vector/hybrid server mode** — only after fast keyword/media path is stable.
+5. **Synthetic performance benchmark** — implemented; confirms endpoint-specific SQL is the next speed slice.
+6. **Vector/hybrid server mode** — only after fast keyword/media path is stable.
 
 ## 7. Test strategy for the next phase
 
@@ -474,7 +477,12 @@ Use TDD for each behavior:
 - HTTP asset route tests before implementation.
 - API response shape tests for `asset_url`, `media_kind`, `mime`.
 - Browser QA fixture with one image and one video sidecar.
-- Large synthetic pack benchmark fixture for performance regression.
+- Large synthetic pack benchmark fixture for performance regression:
+
+```bash
+NOTE_COUNT=1200 MEDIA_COUNT=120 REPEATS=5 WARMUP=1 KEEP_PERF_PACK=1 scripts/perf-benchmark.sh
+```
+
 - Existing gates remain mandatory:
 
 ```bash

@@ -87,11 +87,9 @@ fn read_http_request(stream: &mut TcpStream) -> Result<String> {
             break;
         }
         request.extend_from_slice(&buf[..n]);
-        if request.windows(4).any(|w| {
-            w == b"
-
-"
-        }) || request.len() > 1024 * 1024
+        if request.windows(4).any(|w| w == b"\r\n\r\n")
+            || request.windows(2).any(|w| w == b"\n\n")
+            || request.len() > 1024 * 1024
         {
             break;
         }
@@ -390,6 +388,35 @@ mod tests {
         assert_eq!(body["mode"], "keyword");
         assert_eq!(body["source"], "sqlite_fts");
         assert!(body["elapsed_ms"].is_number());
+    }
+
+    #[test]
+    fn read_http_request_stops_at_header_terminator_without_waiting_for_eof() {
+        use std::io::Write;
+        use std::sync::mpsc;
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (done_tx, done_rx) = mpsc::channel();
+        let writer = std::thread::spawn(move || {
+            let mut stream = TcpStream::connect(addr).unwrap();
+            stream
+                .write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
+                .unwrap();
+            let _ = done_rx.recv_timeout(Duration::from_secs(2));
+        });
+        let (mut stream, _) = listener.accept().unwrap();
+
+        let started = Instant::now();
+        let request = read_http_request(&mut stream).unwrap();
+
+        assert!(request.starts_with("GET / HTTP/1.1"));
+        assert!(
+            started.elapsed() < Duration::from_millis(500),
+            "request reader waited for EOF instead of stopping at header terminator"
+        );
+        done_tx.send(()).unwrap();
+        writer.join().unwrap();
     }
 
     #[test]
