@@ -1,0 +1,13 @@
+[package]
+name = "pack-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pack-core = { path = "../pack-core" }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

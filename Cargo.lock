@@ -1513,6 +1513,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "pack-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "pack-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"

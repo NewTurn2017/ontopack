@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/pack-core", "crates/pack-cli", "crates/pack-mcp"]
+members = ["crates/pack-core", "crates/pack-cli", "crates/pack-mcp", "crates/pack-server"]
 
 [workspace.dependencies]
 anyhow = "1"
