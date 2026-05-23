@@ -1,6 +1,6 @@
 # ontopack 로컬 뷰어
 
-M4 뷰어는 `pack-core`가 만든 인덱스와 노트 파서를 그대로 사용하는 localhost HTTP UI입니다. 별도 프론트엔드 빌드 없이 `pack-server`에 HTML/CSS/JS가 내장되어 있습니다.
+OntoPack 뷰어는 `pack-core`가 만든 인덱스와 노트 파서를 그대로 사용하는 localhost HTTP UI입니다. 별도 프론트엔드 빌드 없이 `pack-server`에 HTML/CSS/JS가 내장되어 있습니다.
 
 ## 실행
 
@@ -32,7 +32,7 @@ pack serve --port 0 --once --request $'GET /api/search?q=hello HTTP/1.1\r\nHost:
 
 ### `GET /api/search?q=<query>&k=<n>&type=<type>&tag=<tag>&from=<date>&to=<date>`
 
-키워드 chunk source card를 반환합니다. type/tag/date 필터를 적용할 수 있습니다. 기본 M4 서버는 모델 다운로드 없는 keyword 검색을 사용합니다.
+키워드 chunk source card를 반환합니다. type/tag/date 필터를 적용할 수 있습니다. 기본 서버는 모델 다운로드 없는 keyword 검색을 사용하며, 응답에는 개발/튜닝용 `elapsed_ms`가 포함됩니다.
 
 ```json
 {
@@ -48,7 +48,8 @@ pack serve --port 0 --once --request $'GET /api/search?q=hello HTTP/1.1\r\nHost:
       "score": -1.23,
       "rank_source": "keyword"
     }
-  ]
+  ],
+  "elapsed_ms": 2
 }
 ```
 
@@ -62,7 +63,8 @@ LLM 답변을 서버에서 직접 생성하지 않고 citation-ready context blo
   "question": "훅 자료?",
   "answer_mode": "external_llm_required",
   "instruction": "Use context_blocks to synthesize an answer with citations outside deterministic pack-core.",
-  "context_blocks": []
+  "context_blocks": [],
+  "elapsed_ms": 2
 }
 ```
 
@@ -72,7 +74,7 @@ LLM 답변을 서버에서 직접 생성하지 않고 citation-ready context blo
 
 ### `GET /api/dashboard?type=<type>&from=<date>&to=<date>&gallery_k=<n>&timeline_k=<n>&graph_limit=<n>`
 
-뷰어 시작/필터 변경 시 필요한 overview 데이터를 한 번에 반환합니다. 응답은 `facets`, `gallery`, `timeline`, `graph`를 포함하며, viewer는 이 API로 패널 초기 로딩 fan-out을 줄입니다.
+뷰어 시작/필터 변경 시 필요한 overview 데이터를 한 번에 반환합니다. 응답은 `facets`, `gallery`, `timeline`, `graph`, `elapsed_ms`를 포함하며, viewer는 이 API로 패널 초기 로딩 fan-out을 줄입니다.
 
 ### `GET /api/gallery?type=<type>&k=<n>`
 

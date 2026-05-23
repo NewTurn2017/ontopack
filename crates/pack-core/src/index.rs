@@ -191,14 +191,30 @@ impl Index {
                ORDER BY score
                LIMIT ?
              )
-             SELECT ranked.id, c.id, ranked.title, ranked.type, c.text, ranked.path, ranked.asset, ranked.score
-             FROM ranked
-             JOIN chunks c ON c.note_id = ranked.id
-             WHERE c.ord = 0
-             ORDER BY ranked.score"
+             SELECT id, chunk_id, title, type, text, path, asset, score
+             FROM (
+               SELECT
+                 ranked.id,
+                 c.id AS chunk_id,
+                 ranked.title,
+                 ranked.type,
+                 c.text,
+                 ranked.path,
+                 ranked.asset,
+                 ranked.score,
+                 row_number() OVER (
+                   PARTITION BY ranked.id
+                   ORDER BY CASE WHEN c.text LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END, c.ord
+                 ) AS rn
+               FROM ranked
+               JOIN chunks c ON c.note_id = ranked.id
+             )
+             WHERE rn = 1
+             ORDER BY score"
         );
         params.insert(0, Value::Text(safe));
         params.push(Value::Integer(k as i64));
+        params.push(Value::Text(snippet_match_pattern(query)));
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params_from_iter(params.iter()), |r| {
             let score: f64 = r.get(7)?;
@@ -410,6 +426,16 @@ fn escape_like(value: &str) -> String {
         .replace('\\', "\\\\")
         .replace('%', "\\%")
         .replace('_', "\\_")
+}
+
+fn snippet_match_pattern(query: &str) -> String {
+    let term = query
+        .split_whitespace()
+        .map(str::trim)
+        .filter(|term| !term.is_empty())
+        .max_by_key(|term| term.chars().count())
+        .unwrap_or(query);
+    format!("%{}%", escape_like(term))
 }
 
 fn register_sqlite_vec_extension() {
@@ -834,6 +860,25 @@ mod tests {
         assert_eq!(hits[0].path, "notes/hook.md");
         assert!(hits[0].snippet.contains("클릭을 부르는 훅"));
         assert_eq!(hits[0].rank_source, crate::search::RankSource::Keyword);
+    }
+
+    #[test]
+    fn keyword_chunk_search_prefers_chunk_containing_query() {
+        let mut idx = Index::open_in_memory().unwrap();
+        let prefix = "도입 설명 ".repeat(260);
+        let mut note = parse_str(
+            "deep",
+            &format!("---\ntitle: 긴 노트\n---\n{prefix}\n\n정확한 니들 문장이 뒤쪽 청크에 있다."),
+        )
+        .unwrap();
+        note.path = "notes/deep.md".into();
+        idx.rebuild(&[note]).unwrap();
+
+        let hits = idx.search_keyword_chunks("니들", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].note_id, "deep");
+        assert_ne!(hits[0].chunk_id, "deep#0000");
+        assert!(hits[0].snippet.contains("니들"));
     }
 
     #[test]

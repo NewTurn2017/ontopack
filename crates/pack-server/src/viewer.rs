@@ -157,11 +157,44 @@ pub fn index_html() -> &'static str {
 pub fn app_js() -> &'static str {
     r#"const $ = (id) => document.getElementById(id);
 
-async function fetchJson(url) {
-  const response = await fetch(url);
+const requestControllers = new Map();
+
+async function fetchJson(url, options = {}) {
+  const response = await fetch(url, options);
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.error || response.statusText);
   return payload;
+}
+
+function nextSignal(key) {
+  const existing = requestControllers.get(key);
+  if (existing) existing.abort();
+  const controller = new AbortController();
+  requestControllers.set(key, controller);
+  return controller.signal;
+}
+
+function clearSignal(key, signal) {
+  const controller = requestControllers.get(key);
+  if (controller && controller.signal === signal) {
+    requestControllers.delete(key);
+    return true;
+  }
+  return false;
+}
+
+function isAbort(error) {
+  return error && error.name === 'AbortError';
+}
+
+function debounce(fn, delay = 180) {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args).catch((error) => {
+      if (!isAbort(error)) console.error(error);
+    }), delay);
+  };
 }
 
 function escapeHtml(value) {
@@ -238,8 +271,17 @@ function updateFilterSummary() {
   $('filter-summary').textContent = parts.length ? `FILTERS: ${parts.join(' · ')}` : 'FILTERS: ALL SOURCE CARDS';
 }
 
-function setResultCount(count, querying = false) {
-  $('result-count').textContent = querying ? 'QUERYING...' : `${count} SOURCE CARD${count === 1 ? '' : 'S'}`;
+function setLoading(id, loading) {
+  $(id).classList.toggle('is-loading', loading);
+}
+
+function setPanelLoading(loading) {
+  for (const id of ['gallery', 'timeline', 'graph']) setLoading(id, loading);
+}
+
+function setResultCount(count, querying = false, elapsedMs = null) {
+  const timing = elapsedMs === null || elapsedMs === undefined ? '' : ` · ${elapsedMs}ms`;
+  $('result-count').textContent = querying ? 'QUERYING...' : `${count} SOURCE CARD${count === 1 ? '' : 'S'}${timing}`;
   $('result-count').classList.toggle('muted-pill', !querying && count === 0);
 }
 
@@ -256,34 +298,57 @@ function renderFacets(facets) {
 }
 
 async function loadDashboard() {
+  const signal = nextSignal('dashboard');
+  setPanelLoading(true);
   const params = filterParams();
   params.set('gallery_k', '12');
   params.set('timeline_k', '10');
   params.set('graph_limit', '80');
-  const data = await fetchJson(`/api/dashboard?${params.toString()}`);
-  renderFacets(data.facets);
-  renderTimeline(data.timeline);
-  renderGallery(data.gallery);
-  renderGraph(data.graph);
+  try {
+    const data = await fetchJson(`/api/dashboard?${params.toString()}`, { signal });
+    renderFacets(data.facets);
+    renderTimeline(data.timeline);
+    renderGallery(data.gallery);
+    renderGraph(data.graph);
+  } catch (error) {
+    if (!isAbort(error)) throw error;
+  } finally {
+    if (clearSignal('dashboard', signal)) setPanelLoading(false);
+  }
 }
 
 async function search(q) {
+  const signal = nextSignal('search');
   updateFilterSummary();
   setResultCount(0, true);
+  setLoading('results', true);
   const params = filterParams();
   params.set('q', q);
   params.set('k', '12');
-  const data = await fetchJson(`/api/search?${params.toString()}`);
-  $('results').innerHTML = data.hits.length ? data.hits.map(card).join('') : '<p class="muted empty-state">NO MATCHING SOURCE CARDS</p>';
-  setResultCount(data.hits.length);
+  try {
+    const data = await fetchJson(`/api/search?${params.toString()}`, { signal });
+    $('results').innerHTML = data.hits.length ? data.hits.map(card).join('') : '<p class="muted empty-state">NO MATCHING SOURCE CARDS</p>';
+    setResultCount(data.hits.length, false, data.elapsed_ms);
+  } catch (error) {
+    if (!isAbort(error)) throw error;
+  } finally {
+    if (clearSignal('search', signal)) setLoading('results', false);
+  }
 }
 
 async function ask(q) {
+  const signal = nextSignal('ask');
   $('ask-context').classList.remove('muted');
   $('ask-context').innerHTML = '<p class="terminal-line">QUERYING CONTEXT BLOCKS...</p>';
-  const data = await fetchJson(`/api/ask?q=${encodeURIComponent(q)}&k=5`);
-  $('ask-context').innerHTML = `<p class="meta terminal-line">${escapeHtml(data.answer_mode)} · ${escapeHtml(data.instruction)}</p>` +
-    (data.context_blocks.length ? data.context_blocks.map(card).join('') : '<p class="muted empty-state">컨텍스트 없음</p>');
+  try {
+    const data = await fetchJson(`/api/ask?q=${encodeURIComponent(q)}&k=5`, { signal });
+    $('ask-context').innerHTML = `<p class="meta terminal-line">${escapeHtml(data.answer_mode)} · ${escapeHtml(data.instruction)} · ${data.elapsed_ms}ms</p>` +
+      (data.context_blocks.length ? data.context_blocks.map(card).join('') : '<p class="muted empty-state">컨텍스트 없음</p>');
+  } catch (error) {
+    if (!isAbort(error)) throw error;
+  } finally {
+    clearSignal('ask', signal);
+  }
 }
 
 async function openNote(id) {
@@ -318,11 +383,18 @@ async function refreshPanels() {
 
 async function refreshForFilters() {
   const q = $('search-input').value.trim();
-  await Promise.all([
-    q ? search(q) : Promise.resolve(),
-    refreshPanels(),
-  ]);
+  await Promise.all([q ? search(q) : Promise.resolve(), refreshPanels()]);
 }
+
+const debouncedSearch = debounce(async () => {
+  const q = $('search-input').value.trim();
+  if (q) {
+    await search(q);
+  } else {
+    $('results').innerHTML = '';
+    setResultCount(0);
+  }
+});
 
 $('search-form').addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -340,6 +412,7 @@ $('ask-form').addEventListener('submit', async (event) => {
 for (const id of ['type-filter', 'tag-filter', 'from-filter', 'to-filter']) {
   $(id).addEventListener('change', refreshForFilters);
 }
+$('search-input').addEventListener('input', debouncedSearch);
 
 document.body.addEventListener('click', async (event) => {
   if (event.target.closest('video, audio, a')) return;
@@ -563,6 +636,7 @@ input::placeholder { color: rgba(216,229,224,.45); }
 .panel-note { color: var(--muted); font-size: 12px; letter-spacing: .08em; }
 .cards { display: grid; gap: 10px; }
 .source-grid { margin-top: 12px; }
+.is-loading { opacity: .62; filter: saturate(.75); }
 .card {
   position: relative;
   display: block;

@@ -2,6 +2,7 @@ use anyhow::{bail, Result};
 use pack_core::pack::Pack;
 use pack_core::search::{RankSource, SearchFilters as CoreSearchFilters, SearchHit};
 use serde::Serialize;
+use std::time::Instant;
 
 const MAX_SEARCH_K: usize = 100;
 
@@ -9,6 +10,7 @@ const MAX_SEARCH_K: usize = 100;
 pub struct SearchResponse {
     pub query: String,
     pub hits: Vec<SearchCard>,
+    pub elapsed_ms: u64,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -42,6 +44,7 @@ pub struct AskResponse {
     pub answer_mode: String,
     pub instruction: String,
     pub context_blocks: Vec<SearchCard>,
+    pub elapsed_ms: u64,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -127,6 +130,7 @@ pub struct DashboardResponse {
     pub gallery: GalleryResponse,
     pub timeline: TimelineResponse,
     pub graph: GraphResponse,
+    pub elapsed_ms: u64,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -175,6 +179,7 @@ pub fn search_with_filters(
     query: &str,
     filters: SearchFilters<'_>,
 ) -> Result<SearchResponse> {
+    let started = Instant::now();
     let k = filters.k.clamp(1, MAX_SEARCH_K);
     let hits = pack.search_keyword_chunks_filtered(
         query,
@@ -189,22 +194,26 @@ pub fn search_with_filters(
     Ok(SearchResponse {
         query: query.to_string(),
         hits: hits.into_iter().map(search_card).collect(),
+        elapsed_ms: elapsed_ms_since(started),
     })
 }
 
 pub fn ask(pack: &Pack, question: &str, k: usize) -> Result<AskResponse> {
+    let started = Instant::now();
     let k = k.clamp(1, MAX_SEARCH_K);
+    let context_blocks = pack
+        .search_keyword_chunks(question, k)?
+        .into_iter()
+        .map(search_card)
+        .collect();
     Ok(AskResponse {
         question: question.to_string(),
         answer_mode: "external_llm_required".to_string(),
         instruction:
             "Use context_blocks to synthesize an answer with citations outside deterministic pack-core."
                 .to_string(),
-        context_blocks: pack
-            .search_keyword_chunks(question, k)?
-            .into_iter()
-            .map(search_card)
-            .collect(),
+        context_blocks,
+        elapsed_ms: elapsed_ms_since(started),
     })
 }
 
@@ -349,6 +358,7 @@ pub fn gallery(pack: &Pack, note_type: Option<&str>, k: usize) -> Result<Gallery
 }
 
 pub fn dashboard(pack: &Pack, filters: DashboardFilters<'_>) -> Result<DashboardResponse> {
+    let started = Instant::now();
     Ok(DashboardResponse {
         facets: facets(pack)?,
         gallery: gallery(pack, filters.note_type, filters.gallery_k)?,
@@ -360,6 +370,7 @@ pub fn dashboard(pack: &Pack, filters: DashboardFilters<'_>) -> Result<Dashboard
             filters.timeline_k,
         )?,
         graph: graph(pack, filters.note_type, filters.graph_limit)?,
+        elapsed_ms: elapsed_ms_since(started),
     })
 }
 
@@ -513,6 +524,10 @@ fn asset_url(asset: &str) -> Option<String> {
         return None;
     }
     Some(format!("/assets/{}", percent_encode_path(relative)))
+}
+
+fn elapsed_ms_since(started: Instant) -> u64 {
+    started.elapsed().as_millis().try_into().unwrap_or(u64::MAX)
 }
 
 fn percent_encode_path(path: &str) -> String {

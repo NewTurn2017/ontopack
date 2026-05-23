@@ -279,7 +279,7 @@ Status: first-pass fix implemented.
 
 The viewer APIs now prefer `.pack/index.db` rows when the index exists and fall back to source markdown scanning only for unbuilt packs. This removes repeated markdown parsing from note detail, related, timeline, graph, facets, and gallery in the normal `pack build` → `pack open` path.
 
-Remaining optimization: the first pass still materializes note rows from SQLite per request. M5C should batch dashboard data and later M5B refinements can add narrower SQL queries for each endpoint.
+Remaining optimization: the first pass still materializes note rows from SQLite per request. Dashboard batching now reduces startup fan-out; later M5B refinements can add narrower SQL queries for each endpoint.
 
 ### 4.2 Viewer startup fans out multiple requests
 
@@ -287,15 +287,19 @@ Status: first-pass fix implemented.
 
 The browser now uses `/api/dashboard` for initial facets/gallery/timeline/graph data and for filter-driven panel refreshes. Search remains a separate request only when a query exists. This reduces panel startup fan-out while preserving the existing embedded viewer.
 
-Remaining optimization: add request cancellation/timing metrics and consider endpoint-specific SQL if dashboard payloads grow too large.
+M5D adds stale request cancellation and lightweight timing metrics. Remaining optimization: consider endpoint-specific SQL if dashboard payloads grow too large.
 
-### 4.3 Media is metadata-only
+### 4.3 Media visibility
 
-Gallery cards currently return `asset: assets/foo.png`, but HTTP does not serve `/assets/...`. Therefore the UI cannot render real thumbnails or video previews yet.
+Status: first-pass fix implemented.
+
+Gallery, note detail, and search cards now expose `asset_url`, `media_kind`, and `mime`; the HTTP server safely serves `/assets/...` from the local pack assets directory. Remaining refinement: cache headers and richer file-specific previews.
 
 ### 4.4 Search result snippet is too coarse
 
-Keyword search ranks matching notes via FTS, then joins `chunks` with `ord = 0`. For long notes, the visible snippet can be the first chunk, not the best matching chunk. This is fast but not good enough for deep packs.
+Status: first-pass fix implemented.
+
+Keyword search still ranks matching notes via FTS, but source cards now choose a chunk containing the query term when possible instead of always showing `ord = 0`. This makes long-note search cards more citation-useful while keeping the fast note-level FTS ranker.
 
 ### 4.5 Real vector/hybrid search is CLI-first
 
@@ -394,33 +398,35 @@ Viewer tasks:
 Acceptance:
 
 - Initial dashboard panel data loads with one API request after static assets.
-- Filter changes use one dashboard request for panels; stale request cancellation is deferred to M5D.
+- Filter changes use one dashboard request for panels; stale request cancellation is covered by M5D.
 
 ### M5D — Faster, better search interaction
 
+Status: first pass implemented.
+
 Goal: perceived search speed improves even before semantic search is wired.
 
-Viewer tasks:
+Implemented viewer tasks:
 
-- Add 120-180ms debounce for typed search if auto-search is enabled later.
-- Use `AbortController` to cancel stale search/dashboard requests.
-- Keep `QUERYING...` state local to the panel, not full-page blocking.
-- Lazy-render long card lists; cap default visible results.
+- Added 180ms typed-search debounce.
+- Added `AbortController` cancellation for stale search/dashboard/ask requests.
+- Kept loading state local to result/panel regions instead of blocking the full page.
 
-Index/search tasks:
+Implemented index/search tasks:
 
-- Improve snippet selection:
-  - use FTS `snippet()`/`highlight()` if practical, or
-  - choose the first chunk containing a matching token instead of always `ord = 0`.
-- Add query timing fields to API responses during development:
-  - `elapsed_ms`
-  - `source`: `sqlite_fts | sqlite_vec | hybrid`
+- Source cards now prefer the first chunk containing the query term instead of always `ord = 0`.
+- `/api/search`, `/api/ask`, and `/api/dashboard` include `elapsed_ms` timing fields.
+
+Remaining refinement:
+
+- Add `source: sqlite_fts | sqlite_vec | hybrid` when server-side vector/hybrid mode exists.
+- Lazy-render very large result lists if the default cap grows beyond the current viewer limits.
 
 Acceptance:
 
 - Search responses include useful snippets for long notes.
-- Browser feels instant on the realistic test pack.
-- Tests cover filter-before-limit and snippet selection.
+- Browser cancels stale local requests during fast typing/filter changes.
+- Tests cover filter-before-limit, snippet selection, timing fields, and real-test API timing checks.
 
 ### M5E — Honest vector/hybrid viewer mode
 

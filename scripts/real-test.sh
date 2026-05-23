@@ -166,10 +166,10 @@ printf '%s\n' "$CLI_TRANSCRIPT" | grep -q 'transcript#0000'
 
 echo "[5/10] viewer API filtered search, including >100 distractors"
 SEARCH_JSON="$(serve_json $'GET /api/search?q=%EA%B3%B5%ED%86%B5%EC%A7%88%EB%AC%B8&type=prompt&tag=needle&from=2026-05-01&to=2026-05-31&k=1 HTTP/1.1\r\nHost: localhost\r\n\r\n')"
-assert_json "filtered search returns target" "$SEARCH_JSON" 'len(v["hits"]) == 1 and v["hits"][0]["note_id"] == "filter-target"'
+assert_json "filtered search returns target with timing" "$SEARCH_JSON" 'len(v["hits"]) == 1 and v["hits"][0]["note_id"] == "filter-target" and isinstance(v["elapsed_ms"], int)'
 
 ASK_JSON="$(serve_json $'GET /api/ask?q=%EC%98%A8%ED%86%A8%EB%A1%9C%EC%A7%80&k=4 HTTP/1.1\r\nHost: localhost\r\n\r\n')"
-assert_json "ask returns context blocks" "$ASK_JSON" 'v["answer_mode"] == "external_llm_required" and len(v["context_blocks"]) >= 1'
+assert_json "ask returns context blocks with timing" "$ASK_JSON" 'v["answer_mode"] == "external_llm_required" and len(v["context_blocks"]) >= 1 and isinstance(v["elapsed_ms"], int)'
 
 ERROR_JSON="$(serve_json $'GET /api/search HTTP/1.1\r\nHost: localhost\r\n\r\n')"
 assert_json "missing q returns json error" "$ERROR_JSON" '"missing query parameter: q" in v["error"]'
@@ -178,7 +178,7 @@ echo "[6/10] viewer API facets/gallery/timeline/graph/note/related"
 FACETS_JSON="$(serve_json $'GET /api/facets HTTP/1.1\r\nHost: localhost\r\n\r\n')"
 assert_json "facets include prompt and ontology" "$FACETS_JSON" '"prompt" in v["types"] and "ontology" in v["tags"]'
 DASHBOARD_JSON="$(serve_json $'GET /api/dashboard?type=image&gallery_k=5&timeline_k=5&graph_limit=20 HTTP/1.1\r\nHost: localhost\r\n\r\n')"
-assert_json "dashboard aggregates facets gallery timeline graph" "$DASHBOARD_JSON" '"facets" in v and any(item["media_kind"] == "image" for item in v["gallery"]["items"]) and "notes" in v["timeline"] and "nodes" in v["graph"]'
+assert_json "dashboard aggregates facets gallery timeline graph with timing" "$DASHBOARD_JSON" '"facets" in v and any(item["media_kind"] == "image" for item in v["gallery"]["items"]) and "notes" in v["timeline"] and "nodes" in v["graph"] and isinstance(v["elapsed_ms"], int)'
 GALLERY_JSON="$(serve_json $'GET /api/gallery?k=5 HTTP/1.1\r\nHost: localhost\r\n\r\n')"
 assert_json "gallery includes evidence image asset metadata" "$GALLERY_JSON" 'any(item["asset"] == "assets/evidence.png" and item["asset_url"] == "/assets/evidence.png" and item["media_kind"] == "image" for item in v["items"])'
 assert_json "gallery includes video asset metadata" "$GALLERY_JSON" 'any(item["asset"] == "assets/demo.mp4" and item["asset_url"] == "/assets/demo.mp4" and item["media_kind"] == "video" for item in v["items"])'

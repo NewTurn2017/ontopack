@@ -380,6 +380,7 @@ mod tests {
         assert_eq!(response.content_type, "application/json; charset=utf-8");
         let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
         assert_eq!(body["hits"][0]["note_id"], "hook");
+        assert!(body["elapsed_ms"].is_number());
     }
 
     #[test]
@@ -461,11 +462,16 @@ Host: localhost
     #[test]
     fn viewer_js_reruns_search_when_filters_change() {
         let js = viewer::app_js();
+        let css = viewer::style_css();
         assert!(js.contains("async function refreshForFilters()"));
         assert!(js.contains("q ? search(q) : Promise.resolve()"));
         assert!(js.contains("loadDashboard()"));
         assert!(js.contains("/api/dashboard"));
+        assert!(js.contains("AbortController"));
+        assert!(js.contains("debouncedSearch"));
         assert!(js.contains("addEventListener('change', refreshForFilters)"));
+        assert!(js.contains("addEventListener('input', debouncedSearch)"));
+        assert!(css.contains(".is-loading"));
     }
 
     #[test]
@@ -498,6 +504,7 @@ Host: localhost
         let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
         assert_eq!(body["answer_mode"], "external_llm_required");
         assert_eq!(body["context_blocks"][0]["note_id"], "hook");
+        assert!(body["elapsed_ms"].is_number());
     }
 
     #[test]
@@ -534,6 +541,7 @@ Host: localhost
         assert_eq!(body["gallery"]["items"][0]["asset_url"], "/assets/pic.png");
         assert_eq!(body["timeline"]["notes"][0]["id"], "pic");
         assert!(!body["graph"]["nodes"].as_array().unwrap().is_empty());
+        assert!(body["elapsed_ms"].is_number());
     }
 
     #[test]
