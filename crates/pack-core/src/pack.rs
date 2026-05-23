@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use walkdir::WalkDir;
 
+#[derive(Clone)]
 pub struct Pack {
     pub root: PathBuf,
     pub config: PackConfig,

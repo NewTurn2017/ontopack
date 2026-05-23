@@ -1,3 +1,4 @@
 /target/
 /.omx/
 .DS_Store
+.playwright-cli/

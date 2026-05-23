@@ -4,9 +4,9 @@ use pack_core::pack::Pack;
 use serde::Serialize;
 use serde_json::json;
 use std::collections::HashMap;
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct HttpResponse {
@@ -42,7 +42,12 @@ pub fn listener_url(listener: &TcpListener) -> Result<String> {
 pub fn serve_forever(pack: Pack, listener: TcpListener) -> Result<()> {
     for stream in listener.incoming() {
         let stream = stream?;
-        serve_stream(&pack, stream)?;
+        let pack = pack.clone();
+        std::thread::spawn(move || {
+            if let Err(err) = serve_stream(&pack, stream) {
+                eprintln!("뷰어 연결 처리 실패(계속 실행): {err}");
+            }
+        });
     }
     Ok(())
 }
@@ -64,8 +69,19 @@ fn read_http_request(stream: &mut TcpStream) -> Result<String> {
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     let mut buf = [0u8; 1024];
     let mut request = Vec::new();
+    let deadline = Instant::now() + Duration::from_secs(5);
     loop {
-        let n = stream.read(&mut buf)?;
+        let n = match stream.read(&mut buf) {
+            Ok(n) => n,
+            Err(err) if matches!(err.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+                if Instant::now() >= deadline {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+                continue;
+            }
+            Err(err) => return Err(err.into()),
+        };
         if n == 0 {
             break;
         }
@@ -78,6 +94,9 @@ fn read_http_request(stream: &mut TcpStream) -> Result<String> {
         {
             break;
         }
+    }
+    if request.is_empty() {
+        bail!("empty HTTP request");
     }
     Ok(String::from_utf8(request)?)
 }
@@ -117,6 +136,11 @@ fn route(pack: &Pack, target: &str) -> Result<HttpResponse> {
             200,
             "text/css; charset=utf-8",
             viewer::style_css(),
+        )),
+        "/favicon.ico" => Ok(text_response(
+            200,
+            "image/svg+xml; charset=utf-8",
+            r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="#111827"/><circle cx="8" cy="8" r="3" fill="#60a5fa"/></svg>"##,
         )),
         "/api/search" => {
             let Ok(q) = required_query(&query, "q") else {
@@ -324,6 +348,22 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("missing query parameter: q"));
+    }
+
+    #[test]
+    fn favicon_route_avoids_browser_console_404() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        let pack = Pack::open(&root).unwrap();
+
+        let response = handle_request(
+            &pack,
+            "GET /favicon.ico HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        )
+        .unwrap();
+        assert_eq!(response.status, 200);
+        assert_eq!(response.content_type, "image/svg+xml; charset=utf-8");
     }
 
     #[test]
