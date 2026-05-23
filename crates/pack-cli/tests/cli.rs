@@ -349,3 +349,56 @@ fn end_to_end_process_build_and_search() {
         .success()
         .stdout(predicate::str::contains("썸네일 훅"));
 }
+
+#[test]
+fn serve_once_prints_local_url_and_handles_one_request() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("p");
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", root.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::write(root.join("notes/a.md"), "hello").unwrap();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["build"])
+        .assert()
+        .success();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args([
+            "serve",
+            "--port",
+            "0",
+            "--once",
+            "--request",
+            "GET /api/search?q=hello HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("http://127.0.0.1:"))
+        .stdout(predicate::str::contains("\"note_id\":\"a\""));
+}
+
+#[test]
+fn open_no_browser_prints_viewer_url() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("p");
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", root.to_str().unwrap()])
+        .assert()
+        .success();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["open", "--port", "0", "--no-browser", "--print-url"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("http://127.0.0.1:"));
+}

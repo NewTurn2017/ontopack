@@ -1479,6 +1479,7 @@ dependencies = [
  "assert_cmd",
  "clap",
  "pack-core",
+ "pack-server",
  "predicates",
  "tempfile",
 ]

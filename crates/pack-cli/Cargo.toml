@@ -9,6 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 pack-core = { path = "../pack-core" }
+pack-server = { path = "../pack-server" }
 anyhow = { workspace = true }
 clap = { workspace = true }
 

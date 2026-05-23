@@ -4,6 +4,9 @@ use pack_core::pack::Pack;
 use serde::Serialize;
 use serde_json::json;
 use std::collections::HashMap;
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::time::Duration;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct HttpResponse {
@@ -26,6 +29,57 @@ impl HttpResponse {
         response.extend_from_slice(&self.body);
         response
     }
+}
+
+pub fn bind_localhost(port: u16) -> Result<TcpListener> {
+    Ok(TcpListener::bind(("127.0.0.1", port))?)
+}
+
+pub fn listener_url(listener: &TcpListener) -> Result<String> {
+    Ok(format!("http://{}", listener.local_addr()?))
+}
+
+pub fn serve_forever(pack: Pack, listener: TcpListener) -> Result<()> {
+    for stream in listener.incoming() {
+        let stream = stream?;
+        serve_stream(&pack, stream)?;
+    }
+    Ok(())
+}
+
+pub fn serve_once(pack: &Pack, listener: &TcpListener) -> Result<()> {
+    let (stream, _) = listener.accept()?;
+    serve_stream(pack, stream)
+}
+
+fn serve_stream(pack: &Pack, mut stream: TcpStream) -> Result<()> {
+    let request = read_http_request(&mut stream)?;
+    let response = handle_request(pack, &request)?.to_http_bytes();
+    stream.write_all(&response)?;
+    stream.flush()?;
+    Ok(())
+}
+
+fn read_http_request(stream: &mut TcpStream) -> Result<String> {
+    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+    let mut buf = [0u8; 1024];
+    let mut request = Vec::new();
+    loop {
+        let n = stream.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        request.extend_from_slice(&buf[..n]);
+        if request.windows(4).any(|w| {
+            w == b"
+
+"
+        }) || request.len() > 1024 * 1024
+        {
+            break;
+        }
+    }
+    Ok(String::from_utf8(request)?)
 }
 
 pub fn handle_request(pack: &Pack, raw_request: &str) -> Result<HttpResponse> {

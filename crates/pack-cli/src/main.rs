@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use pack_core::pack::{find_pack_root, AddOutcome, Pack};
 use pack_core::search::{RankSource, SearchHit};
 use std::path::PathBuf;
+use std::process::Command as ProcessCommand;
 
 #[derive(Parser)]
 #[command(name = "pack", about = "ontopack — 로컬 지식 팩 CLI")]
@@ -55,6 +56,30 @@ enum Commands {
         /// 검색 모드
         #[arg(long, value_enum, default_value_t = SearchModeArg::Keyword)]
         mode: SearchModeArg,
+    },
+    /// 로컬 HTTP 뷰어/API 서버를 시작한다
+    Serve {
+        /// 바인딩할 로컬 포트 (0이면 임의 포트)
+        #[arg(long, default_value_t = 8787)]
+        port: u16,
+        /// 테스트/스모크용: 요청 하나만 처리하고 종료
+        #[arg(long)]
+        once: bool,
+        /// --once에서 사용할 raw HTTP 요청
+        #[arg(long)]
+        request: Option<String>,
+    },
+    /// 로컬 뷰어를 브라우저로 연다
+    Open {
+        /// 바인딩할 로컬 포트 (0이면 임의 포트)
+        #[arg(long, default_value_t = 8787)]
+        port: u16,
+        /// 브라우저를 실행하지 않는다
+        #[arg(long)]
+        no_browser: bool,
+        /// URL을 stdout에 출력한다
+        #[arg(long)]
+        print_url: bool,
     },
 }
 
@@ -126,6 +151,45 @@ fn main() -> Result<()> {
             for h in hits {
                 print_search_hit(&h);
             }
+        }
+        Commands::Serve {
+            port,
+            once,
+            request,
+        } => {
+            let root = find_pack_root(&std::env::current_dir()?)?;
+            let pack = Pack::open(&root)?;
+            let listener = pack_server::http::bind_localhost(port)?;
+            let url = pack_server::http::listener_url(&listener)?;
+            println!("뷰어 서버: {url}");
+            if once {
+                if let Some(request) = request {
+                    let response = pack_server::http::handle_request(&pack, &request)?;
+                    println!("{}", String::from_utf8_lossy(&response.body));
+                } else {
+                    pack_server::http::serve_once(&pack, &listener)?;
+                }
+            } else {
+                pack_server::http::serve_forever(pack, listener)?;
+            }
+        }
+        Commands::Open {
+            port,
+            no_browser,
+            print_url,
+        } => {
+            let root = find_pack_root(&std::env::current_dir()?)?;
+            let pack = Pack::open(&root)?;
+            let listener = pack_server::http::bind_localhost(port)?;
+            let url = pack_server::http::listener_url(&listener)?;
+            if print_url || no_browser {
+                println!("{url}");
+            }
+            if no_browser {
+                return Ok(());
+            }
+            open_browser(&url)?;
+            pack_server::http::serve_forever(pack, listener)?;
         }
     }
     Ok(())
@@ -212,4 +276,27 @@ fn embed_pack(_pack: &Pack, _skip_build: bool) -> Result<()> {
     bail!(
         "pack embed는 real-embed feature로 빌드해야 합니다: cargo build --release --features real-embed"
     )
+}
+
+fn open_browser(url: &str) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = ProcessCommand::new("open");
+        command.arg(url);
+        command
+    };
+    #[cfg(target_os = "linux")]
+    let mut command = {
+        let mut command = ProcessCommand::new("xdg-open");
+        command.arg(url);
+        command
+    };
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut command = ProcessCommand::new("cmd");
+        command.args(["/C", "start", url]);
+        command
+    };
+    command.spawn()?;
+    Ok(())
 }
