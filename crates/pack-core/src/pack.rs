@@ -2,7 +2,7 @@ use crate::config::PackConfig;
 use crate::index::{Index, VectorChunkHit};
 use crate::note::{self, Note};
 use crate::process::{infer_type, ProcessReport};
-use crate::search::{rrf_fuse, NoteHit, SearchHit};
+use crate::search::{rrf_fuse, NoteHit, SearchFilters, SearchHit};
 use anyhow::{anyhow, bail, Context, Result};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -292,6 +292,17 @@ impl Pack {
     pub fn search_keyword_chunks(&self, query: &str, k: usize) -> Result<Vec<SearchHit>> {
         let idx = Index::open(&self.index_path())?;
         idx.search_keyword_chunks(query, k)
+    }
+
+    /// 현재 팩 인덱스에서 메타데이터 필터를 먼저 적용한 뒤 키워드 청크 카드를 검색한다.
+    pub fn search_keyword_chunks_filtered(
+        &self,
+        query: &str,
+        k: usize,
+        filters: SearchFilters<'_>,
+    ) -> Result<Vec<SearchHit>> {
+        let idx = Index::open(&self.index_path())?;
+        idx.search_keyword_chunks_filtered(query, k, filters)
     }
 
     /// 현재 팩 인덱스에서 벡터 청크 검색을 수행한다.

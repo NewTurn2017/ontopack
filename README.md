@@ -2,9 +2,14 @@
 
 로컬 멀티모달 지식 팩 엔진. 평문 파일이 진실, SQLite+FTS5가 빠른 인덱스.
 
+## 빠른 MVP 검증
+
+- 새 사용자는 `docs/mvp.md`의 5분 runbook으로 init → process/build → search → MCP → viewer를 확인할 수 있습니다.
+- 전체 자동 smoke: `scripts/mvp-smoke.sh` (임시 팩으로 CLI + MCP + viewer API + `pack open --no-browser` 검증)
+
 ## M1 (현재)
 - `pack init [경로]` — 새 팩
-- `pack add <파일> [--type T]` — md→notes/, 그 외→assets/+사이드카
+- `pack add <파일> [--type T]` — md/markdown/txt→notes/, 그 외→assets/+사이드카
 - `pack build` — 인덱스 (재)빌드
 - `pack search "<질의>"` — 키워드(BM25) 검색
 
@@ -14,7 +19,7 @@
 - 인덱스는 `notes`, `notes_fts`, `edges`, `chunks`를 재생성/갱신
 
 ## M2B
-- `pack build --no-embed` — 임베딩 없이 기존 키워드/청크 인덱스만 빌드
+- `pack build --no-embed` — 기본 MVP와 같은 오프라인 키워드/청크 인덱스만 빌드(모델 다운로드 없음)
 - `pack-core::embed::Embedder` — 실제 모델과 테스트용 fake embedder를 분리하는 임베딩 인터페이스
 - `pack-core`는 `sqlite-vec` 기반 `vec_chunks` 파생 테이블에 청크 벡터를 저장하고, fake embedder fixture로 벡터 검색을 검증
 - 실제 BGE-M3 provider는 optional feature로 분리:

@@ -164,6 +164,14 @@ async function refreshPanels() {
   await Promise.all([loadTimeline(), loadGallery(), loadGraph()]);
 }
 
+async function refreshForFilters() {
+  const q = $('search-input').value.trim();
+  await Promise.all([
+    q ? search(q) : Promise.resolve(),
+    refreshPanels(),
+  ]);
+}
+
 $('search-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const q = $('search-input').value.trim();
@@ -178,7 +186,7 @@ $('ask-form').addEventListener('submit', async (event) => {
 });
 
 for (const id of ['type-filter', 'tag-filter', 'from-filter', 'to-filter']) {
-  $(id).addEventListener('change', refreshPanels);
+  $(id).addEventListener('change', refreshForFilters);
 }
 
 document.body.addEventListener('click', async (event) => {

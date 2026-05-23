@@ -26,8 +26,8 @@ cargo run -p pack-mcp -- --pack-root /path/to/my-pack
 {
   "mcpServers": {
     "ontopack": {
-      "command": "/Users/genie/dev/ontopack/target/release/pack-mcp",
-      "args": ["--pack-root", "/Users/genie/my-pack"]
+      "command": "/path/to/ontopack/target/release/pack-mcp",
+      "args": ["--pack-root", "/path/to/my-pack"]
     }
   }
 }
@@ -40,8 +40,8 @@ cargo run -p pack-mcp -- --pack-root /path/to/my-pack
   "mcpServers": {
     "ontopack-dev": {
       "command": "cargo",
-      "args": ["run", "-p", "pack-mcp", "--", "--pack-root", "/Users/genie/my-pack"],
-      "cwd": "/Users/genie/dev/ontopack"
+      "args": ["run", "-p", "pack-mcp", "--", "--pack-root", "/path/to/my-pack"],
+      "cwd": "/path/to/ontopack"
     }
   }
 }
@@ -53,8 +53,8 @@ Codex MCP 설정에도 같은 stdio 명령을 등록합니다.
 
 ```toml
 [mcp_servers.ontopack]
-command = "/Users/genie/dev/ontopack/target/release/pack-mcp"
-args = ["--pack-root", "/Users/genie/my-pack"]
+command = "/path/to/ontopack/target/release/pack-mcp"
+args = ["--pack-root", "/path/to/my-pack"]
 ```
 
 ## 수동 smoke

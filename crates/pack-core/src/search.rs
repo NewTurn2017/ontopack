@@ -27,6 +27,14 @@ pub struct SearchHit {
     pub rank_source: RankSource,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct SearchFilters<'a> {
+    pub note_type: Option<&'a str>,
+    pub tag: Option<&'a str>,
+    pub from: Option<&'a str>,
+    pub to: Option<&'a str>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SearchMode {
     Keyword,

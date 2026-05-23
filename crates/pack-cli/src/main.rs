@@ -121,19 +121,26 @@ fn main() -> Result<()> {
         }
         Commands::Build {
             incremental,
-            no_embed: _,
+            no_embed,
         } => {
             let root = find_pack_root(&std::env::current_dir()?)?;
             let pack = Pack::open(&root)?;
             if incremental {
                 let report = pack.build_index_incremental()?;
                 println!(
-                    "증분 인덱스 빌드 완료: indexed={} skipped={} removed={}",
-                    report.indexed, report.skipped, report.removed
+                    "증분 인덱스 빌드 완료: indexed={} skipped={} removed={}{}",
+                    report.indexed,
+                    report.skipped,
+                    report.removed,
+                    if no_embed { " (no-embed)" } else { "" }
                 );
             } else {
                 let count = pack.build_index()?;
-                println!("인덱스 빌드 완료: 노트 {count}개");
+                if no_embed {
+                    println!("인덱스 빌드 완료: 노트 {count}개 (no-embed)");
+                } else {
+                    println!("인덱스 빌드 완료: 노트 {count}개");
+                }
             }
         }
         Commands::Embed { skip_build } => {

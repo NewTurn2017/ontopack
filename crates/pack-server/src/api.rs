@@ -1,7 +1,9 @@
 use anyhow::{bail, Result};
 use pack_core::pack::Pack;
-use pack_core::search::{RankSource, SearchHit};
+use pack_core::search::{RankSource, SearchFilters as CoreSearchFilters, SearchHit};
 use serde::Serialize;
+
+const MAX_SEARCH_K: usize = 100;
 
 #[derive(Debug, Serialize, PartialEq)]
 pub struct SearchResponse {
@@ -145,12 +147,17 @@ pub fn search_with_filters(
     query: &str,
     filters: SearchFilters<'_>,
 ) -> Result<SearchResponse> {
-    let k = filters.k.max(1);
-    let note_filter = note_filter_map(pack, filters)?;
-    let mut hits = pack.search_keyword_chunks(query, k)?;
-    if let Some(note_filter) = note_filter {
-        hits.retain(|hit| note_filter.contains(&hit.note_id));
-    }
+    let k = filters.k.clamp(1, MAX_SEARCH_K);
+    let hits = pack.search_keyword_chunks_filtered(
+        query,
+        k,
+        CoreSearchFilters {
+            note_type: filters.note_type,
+            tag: filters.tag,
+            from: filters.from,
+            to: filters.to,
+        },
+    )?;
     Ok(SearchResponse {
         query: query.to_string(),
         hits: hits.into_iter().map(search_card).collect(),
@@ -158,6 +165,7 @@ pub fn search_with_filters(
 }
 
 pub fn ask(pack: &Pack, question: &str, k: usize) -> Result<AskResponse> {
+    let k = k.clamp(1, MAX_SEARCH_K);
     Ok(AskResponse {
         question: question.to_string(),
         answer_mode: "external_llm_required".to_string(),
@@ -165,7 +173,7 @@ pub fn ask(pack: &Pack, question: &str, k: usize) -> Result<AskResponse> {
             "Use context_blocks to synthesize an answer with citations outside deterministic pack-core."
                 .to_string(),
         context_blocks: pack
-            .search_keyword_chunks(question, k.max(1))?
+            .search_keyword_chunks(question, k)?
             .into_iter()
             .map(search_card)
             .collect(),
@@ -302,44 +310,6 @@ pub fn gallery(pack: &Pack, note_type: Option<&str>, k: usize) -> Result<Gallery
     Ok(GalleryResponse { items })
 }
 
-fn note_filter_map(
-    pack: &Pack,
-    filters: SearchFilters<'_>,
-) -> Result<Option<std::collections::HashSet<String>>> {
-    if filters.note_type.is_none()
-        && filters.tag.is_none()
-        && filters.from.is_none()
-        && filters.to.is_none()
-    {
-        return Ok(None);
-    }
-    let ids = pack
-        .scan_notes()?
-        .into_iter()
-        .filter(|note| {
-            filters
-                .note_type
-                .is_none_or(|note_type| note.note_type == note_type)
-        })
-        .filter(|note| {
-            filters
-                .tag
-                .is_none_or(|tag| note.tags.iter().any(|t| t == tag))
-        })
-        .filter(|note| {
-            if filters.from.is_none() && filters.to.is_none() {
-                return true;
-            }
-            note.created.as_deref().is_some_and(|created| {
-                filters.from.is_none_or(|from| created >= from)
-                    && filters.to.is_none_or(|to| created <= to)
-            })
-        })
-        .map(|note| note.id)
-        .collect();
-    Ok(Some(ids))
-}
-
 fn search_card(hit: SearchHit) -> SearchCard {
     SearchCard {
         note_id: hit.note_id,
@@ -385,6 +355,57 @@ mod tests {
         assert_eq!(response.hits[0].note_id, "hook");
         assert_eq!(response.hits[0].chunk_id, "hook#0000");
         assert_eq!(response.hits[0].rank_source, "keyword");
+    }
+
+    #[test]
+    fn search_filters_apply_before_final_limit() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        for i in 0..101 {
+            std::fs::write(
+                root.join("notes").join(format!("distractor-{i:03}.md")),
+                format!(
+                    "---
+type: note
+title: Distractor {i:03}
+---
+common term {i}",
+                ),
+            )
+            .unwrap();
+        }
+        std::fs::write(
+            root.join("notes/z.md"),
+            "---
+type: prompt
+title: Z
+tags: [needle]
+created: 2026-05-23
+---
+common term",
+        )
+        .unwrap();
+        let pack = Pack::open(&root).unwrap();
+        pack.build_index().unwrap();
+
+        let unfiltered = search(&pack, "common", None, 1).unwrap();
+        assert_eq!(unfiltered.hits.len(), 1);
+
+        let filtered = search_with_filters(
+            &pack,
+            "common",
+            SearchFilters {
+                note_type: Some("prompt"),
+                tag: Some("needle"),
+                from: Some("2026-01-01"),
+                to: Some("2026-12-31"),
+                k: 1,
+            },
+        )
+        .unwrap();
+        assert_eq!(filtered.hits.len(), 1);
+        assert_eq!(filtered.hits[0].note_id, "z");
     }
 
     #[test]

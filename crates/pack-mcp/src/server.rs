@@ -1,8 +1,10 @@
 use anyhow::{anyhow, Result};
 use pack_core::pack::{AddOutcome, Pack};
+use pack_core::search::SearchFilters;
 use serde_json::{json, Value};
 use std::path::Path;
 
+const MAX_SEARCH_K: usize = 100;
 const SUPPORTED_PROTOCOL_VERSIONS: &[&str] =
     &["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
@@ -172,17 +174,19 @@ impl McpServer {
         if mode != "keyword" {
             return tool_error("MCP vector/hybrid search requires a real embedding provider; use CLI real-embed path first");
         }
-        match self.pack.search_keyword_chunks(query, k) {
-            Ok(mut hits) => {
-                if let Some(note_type) = note_type_filter {
-                    hits.retain(|hit| hit.note_type == note_type);
-                }
-                tool_json(json!({
-                    "query": query,
-                    "mode": "keyword",
-                    "hits": hits.into_iter().map(search_hit_json).collect::<Vec<_>>()
-                }))
-            }
+        match self.pack.search_keyword_chunks_filtered(
+            query,
+            k,
+            SearchFilters {
+                note_type: note_type_filter,
+                ..SearchFilters::default()
+            },
+        ) {
+            Ok(hits) => tool_json(json!({
+                "query": query,
+                "mode": "keyword",
+                "hits": hits.into_iter().map(search_hit_json).collect::<Vec<_>>()
+            })),
             Err(err) => tool_error(err.to_string()),
         }
     }
@@ -303,6 +307,7 @@ fn read_k(arguments: &Value, default: usize) -> usize {
         .and_then(Value::as_u64)
         .and_then(|v| usize::try_from(v).ok())
         .filter(|v| *v > 0)
+        .map(|v| v.min(MAX_SEARCH_K))
         .unwrap_or(default)
 }
 
@@ -446,6 +451,46 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("클릭을 부르는 훅"));
+    }
+
+    #[test]
+    fn search_tool_type_filter_applies_before_final_limit() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        for i in 0..101 {
+            std::fs::write(
+                root.join("notes").join(format!("distractor-{i:03}.md")),
+                format!(
+                    "---
+type: note
+title: Distractor {i:03}
+---
+common term {i}",
+                ),
+            )
+            .unwrap();
+        }
+        std::fs::write(
+            root.join("notes/z.md"),
+            "---
+type: prompt
+title: Z
+---
+common term",
+        )
+        .unwrap();
+        let pack = Pack::open(&root).unwrap();
+        pack.build_index().unwrap();
+        let server = McpServer::open(&root).unwrap();
+
+        let result = call_tool(
+            &server,
+            "search",
+            json!({ "query": "common", "k": 1, "type": "prompt" }),
+        );
+        assert_eq!(result["hits"].as_array().unwrap().len(), 1);
+        assert_eq!(result["hits"][0]["note_id"], "z");
     }
 
     #[test]

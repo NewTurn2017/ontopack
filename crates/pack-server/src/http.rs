@@ -98,7 +98,10 @@ pub fn handle_request(pack: &Pack, raw_request: &str) -> Result<HttpResponse> {
 
 fn route(pack: &Pack, target: &str) -> Result<HttpResponse> {
     let (path, query) = split_target(target);
-    let query = parse_query(query)?;
+    let query = match parse_query(query) {
+        Ok(query) => query,
+        Err(err) => return Ok(json_error(400, err.to_string())),
+    };
     match path.as_str() {
         "/" => Ok(text_response(
             200,
@@ -115,22 +118,28 @@ fn route(pack: &Pack, target: &str) -> Result<HttpResponse> {
             "text/css; charset=utf-8",
             viewer::style_css(),
         )),
-        "/api/search" => json_response(api::search_with_filters(
-            pack,
-            required_query(&query, "q")?,
-            api::SearchFilters {
-                note_type: query.get("type").map(String::as_str),
-                tag: query.get("tag").map(String::as_str),
-                from: query.get("from").map(String::as_str),
-                to: query.get("to").map(String::as_str),
-                k: read_usize(&query, "k", 10),
-            },
-        )?),
-        "/api/ask" => json_response(api::ask(
-            pack,
-            required_query(&query, "q")?,
-            read_usize(&query, "k", 5),
-        )?),
+        "/api/search" => {
+            let Ok(q) = required_query(&query, "q") else {
+                return Ok(json_error(400, "missing query parameter: q"));
+            };
+            json_response(api::search_with_filters(
+                pack,
+                q,
+                api::SearchFilters {
+                    note_type: query.get("type").map(String::as_str),
+                    tag: query.get("tag").map(String::as_str),
+                    from: query.get("from").map(String::as_str),
+                    to: query.get("to").map(String::as_str),
+                    k: read_usize(&query, "k", 10),
+                },
+            )?)
+        }
+        "/api/ask" => {
+            let Ok(q) = required_query(&query, "q") else {
+                return Ok(json_error(400, "missing query parameter: q"));
+            };
+            json_response(api::ask(pack, q, read_usize(&query, "k", 5))?)
+        }
         "/api/facets" => json_response(api::facets(pack)?),
         "/api/gallery" => json_response(api::gallery(
             pack,
@@ -265,6 +274,7 @@ fn percent_decode(input: &str) -> Result<String> {
 fn reason_phrase(status: u16) -> &'static str {
     match status {
         200 => "OK",
+        400 => "Bad Request",
         404 => "Not Found",
         405 => "Method Not Allowed",
         500 => "Internal Server Error",
@@ -296,6 +306,24 @@ mod tests {
         assert_eq!(response.content_type, "application/json; charset=utf-8");
         let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
         assert_eq!(body["hits"][0]["note_id"], "hook");
+    }
+
+    #[test]
+    fn api_search_missing_query_returns_400_json() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        let pack = Pack::open(&root).unwrap();
+
+        let response =
+            handle_request(&pack, "GET /api/search HTTP/1.1\r\nHost: localhost\r\n\r\n").unwrap();
+        assert_eq!(response.status, 400);
+        assert_eq!(response.content_type, "application/json; charset=utf-8");
+        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert!(body["error"]
+            .as_str()
+            .unwrap()
+            .contains("missing query parameter: q"));
     }
 
     #[test]
@@ -339,6 +367,15 @@ Host: localhost
         assert!(html.contains("type-filter"));
         assert!(html.contains("gallery"));
     }
+
+    #[test]
+    fn viewer_js_reruns_search_when_filters_change() {
+        let js = viewer::app_js();
+        assert!(js.contains("async function refreshForFilters()"));
+        assert!(js.contains("q ? search(q) : Promise.resolve()"));
+        assert!(js.contains("addEventListener('change', refreshForFilters)"));
+    }
+
     #[test]
     fn api_ask_http_returns_context_blocks() {
         let dir = tempdir().unwrap();

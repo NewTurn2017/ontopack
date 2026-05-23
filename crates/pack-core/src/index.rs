@@ -1,6 +1,8 @@
 use crate::note::Note;
 use anyhow::{anyhow, Result};
-use rusqlite::{params, Connection, OptionalExtension, Transaction};
+use rusqlite::{
+    params, params_from_iter, types::Value, Connection, OptionalExtension, Transaction,
+};
 use std::path::Path;
 use std::sync::Once;
 
@@ -166,25 +168,38 @@ impl Index {
         query: &str,
         k: usize,
     ) -> Result<Vec<crate::search::SearchHit>> {
+        self.search_keyword_chunks_filtered(query, k, crate::search::SearchFilters::default())
+    }
+
+    pub fn search_keyword_chunks_filtered(
+        &self,
+        query: &str,
+        k: usize,
+        filters: crate::search::SearchFilters<'_>,
+    ) -> Result<Vec<crate::search::SearchHit>> {
         let safe = sanitize_fts_query(query);
-        if safe.is_empty() {
+        if safe.is_empty() || k == 0 {
             return Ok(Vec::new());
         }
-        let mut stmt = self.conn.prepare(
+        let (where_clause, mut params) = keyword_filter_where_clause(filters)?;
+        let sql = format!(
             "WITH ranked AS (
                SELECT n.id, n.title, n.type, n.path, bm25(notes_fts) AS score
                FROM notes_fts JOIN notes n ON n.id = notes_fts.id
-               WHERE notes_fts MATCH ?1
+               WHERE notes_fts MATCH ? {where_clause}
                ORDER BY score
-               LIMIT ?2
+               LIMIT ?
              )
              SELECT ranked.id, c.id, ranked.title, ranked.type, c.text, ranked.path, ranked.score
              FROM ranked
              JOIN chunks c ON c.note_id = ranked.id
              WHERE c.ord = 0
-             ORDER BY ranked.score",
-        )?;
-        let rows = stmt.query_map(params![safe, k as i64], |r| {
+             ORDER BY ranked.score"
+        );
+        params.insert(0, Value::Text(safe));
+        params.push(Value::Integer(k as i64));
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params_from_iter(params.iter()), |r| {
             let score: f64 = r.get(6)?;
             Ok(crate::search::SearchHit {
                 note_id: r.get(0)?,
@@ -313,6 +328,42 @@ impl Index {
             })
             .collect())
     }
+}
+
+fn keyword_filter_where_clause(
+    filters: crate::search::SearchFilters<'_>,
+) -> Result<(String, Vec<Value>)> {
+    let mut where_clause = String::new();
+    let mut params = Vec::new();
+
+    if let Some(note_type) = filters.note_type {
+        where_clause.push_str(" AND n.type = ?");
+        params.push(Value::Text(note_type.to_string()));
+    }
+    if let Some(tag) = filters.tag {
+        where_clause.push_str(" AND n.tags LIKE ? ESCAPE '\\'");
+        params.push(Value::Text(format!(
+            "%{}%",
+            escape_like(&serde_json::to_string(tag)?)
+        )));
+    }
+    if let Some(from) = filters.from {
+        where_clause.push_str(" AND n.created IS NOT NULL AND n.created >= ?");
+        params.push(Value::Text(from.to_string()));
+    }
+    if let Some(to) = filters.to {
+        where_clause.push_str(" AND n.created IS NOT NULL AND n.created <= ?");
+        params.push(Value::Text(to.to_string()));
+    }
+
+    Ok((where_clause, params))
+}
+
+fn escape_like(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }
 
 fn register_sqlite_vec_extension() {
@@ -737,5 +788,44 @@ mod tests {
         assert_eq!(hits[0].path, "notes/hook.md");
         assert!(hits[0].snippet.contains("클릭을 부르는 훅"));
         assert_eq!(hits[0].rank_source, crate::search::RankSource::Keyword);
+    }
+
+    #[test]
+    fn keyword_chunk_search_filters_before_limit() {
+        let mut idx = Index::open_in_memory().unwrap();
+        let mut notes = Vec::new();
+        for i in 0..101 {
+            notes.push(
+                parse_str(
+                    &format!("distractor-{i:03}"),
+                    &format!("---\ntype: note\ntitle: Distractor {i:03}\n---\ncommon term {i}"),
+                )
+                .unwrap(),
+            );
+        }
+        notes.push(
+            parse_str(
+                "target",
+                "---\ntype: prompt\ntitle: Target\ntags: [needle]\ncreated: 2026-05-23\n---\ncommon term target",
+            )
+            .unwrap(),
+        );
+        idx.rebuild(&notes).unwrap();
+
+        let hits = idx
+            .search_keyword_chunks_filtered(
+                "common",
+                1,
+                crate::search::SearchFilters {
+                    note_type: Some("prompt"),
+                    tag: Some("needle"),
+                    from: Some("2026-01-01"),
+                    to: Some("2026-12-31"),
+                },
+            )
+            .unwrap();
+
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].note_id, "target");
     }
 }

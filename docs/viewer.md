@@ -16,10 +16,10 @@ pack serve --port 8787
 pack open
 ```
 
-임의 포트를 쓰려면:
+임의 포트를 쓰고 URL만 출력하려면:
 
 ```bash
-pack open --port 0 --print-url
+pack open --port 0 --no-browser --print-url
 ```
 
 자동화/스모크 테스트용으로 요청 하나만 처리할 수 있습니다.
