@@ -184,10 +184,13 @@ echo "[5/11] portable context exports"
 (cd "$PACK_DIR" && "$PACK_BIN" export --format jsonl >/tmp/ontopack-real-export.jsonl)
 grep -q '"note_id":"lecture-outline"' /tmp/ontopack-real-export.jsonl
 grep -q '"asset_path":"assets/evidence.png"' /tmp/ontopack-real-export.jsonl
-(cd "$PACK_DIR" && "$PACK_BIN" export --format markdown-bundle --output /tmp/ontopack-real-export.md >/tmp/ontopack-real-export-file.out)
+rm -rf /tmp/ontopack-real-export-assets
+(cd "$PACK_DIR" && "$PACK_BIN" export --format markdown-bundle --output /tmp/ontopack-real-export.md --copy-assets /tmp/ontopack-real-export-assets >/tmp/ontopack-real-export-file.out)
 grep -q 'export 완료' /tmp/ontopack-real-export-file.out
+grep -q 'assets copied=' /tmp/ontopack-real-export-file.out
 grep -q 'Citation: `note:lecture-outline`' /tmp/ontopack-real-export.md
 grep -q 'Asset: `assets/evidence.png`' /tmp/ontopack-real-export.md
+test -s /tmp/ontopack-real-export-assets/assets/evidence.png
 (cd "$PACK_DIR" && "$PACK_BIN" export --format mcp-context >/tmp/ontopack-real-mcp-context.json)
 grep -q '"type":"ontopack.mcp_context"' /tmp/ontopack-real-mcp-context.json
 grep -q '"citation":"note:demo-video"' /tmp/ontopack-real-mcp-context.json

@@ -726,6 +726,55 @@ fn export_can_write_to_output_file() {
     assert!(body.contains("Citation: `note:a`"));
 }
 
+#[test]
+fn export_can_copy_referenced_assets_for_portable_bundle() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("p");
+    let out = dir.path().join("context.jsonl");
+    let assets_out = dir.path().join("portable-assets");
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", root.to_str().unwrap()])
+        .assert()
+        .success();
+
+    std::fs::write(root.join("assets/board.png"), [0x89, 0x50, 0x4e, 0x47]).unwrap();
+    std::fs::create_dir_all(root.join("assets/.derived/clip")).unwrap();
+    std::fs::write(
+        root.join("assets/.derived/clip/keyframe-0000.jpg"),
+        [0xff, 0xd8, 0xff],
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("notes/board.md"),
+        "---\ntype: image\ntitle: Board\nasset: assets/board.png\n---\nDerived frame: `assets/.derived/clip/keyframe-0000.jpg`",
+    )
+    .unwrap();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args([
+            "export",
+            "--format",
+            "jsonl",
+            "--output",
+            out.to_str().unwrap(),
+            "--copy-assets",
+            assets_out.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("assets copied=2"));
+
+    let body = std::fs::read_to_string(out).unwrap();
+    assert!(body.contains(r#""asset_path":"assets/board.png""#));
+    assert!(assets_out.join("assets/board.png").exists());
+    assert!(assets_out
+        .join("assets/.derived/clip/keyframe-0000.jpg")
+        .exists());
+}
+
 #[cfg(unix)]
 fn make_executable(path: &std::path::Path) {
     use std::os::unix::fs::PermissionsExt;

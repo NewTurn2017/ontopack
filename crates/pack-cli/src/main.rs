@@ -118,6 +118,9 @@ enum Commands {
         /// 출력 파일 경로. 생략하면 stdout으로 출력한다
         #[arg(long)]
         output: Option<PathBuf>,
+        /// portable bundle용 asset 복사 디렉터리. asset path를 보존해 <dir>/assets/...로 복사한다
+        #[arg(long)]
+        copy_assets: Option<PathBuf>,
     },
     /// 로컬 HTTP 뷰어/API 서버를 시작한다
     Serve {
@@ -307,10 +310,15 @@ fn main() -> Result<()> {
                 print_search_hit(&h);
             }
         }
-        Commands::Export { format, output } => {
+        Commands::Export {
+            format,
+            output,
+            copy_assets,
+        } => {
             let root = find_pack_root(&std::env::current_dir()?)?;
             let pack = Pack::open(&root)?;
             let body = export_pack(&pack, format)?;
+            let wrote_to_file = output.is_some();
             if let Some(output) = output {
                 if let Some(parent) = output
                     .parent()
@@ -322,6 +330,15 @@ fn main() -> Result<()> {
                 println!("export 완료: {}", output.display());
             } else {
                 print!("{body}");
+            }
+            if let Some(copy_assets) = copy_assets {
+                let copied = copy_referenced_assets(&pack, &copy_assets)?;
+                let message = format!("assets copied={copied} -> {}", copy_assets.display());
+                if wrote_to_file {
+                    println!("{message}");
+                } else {
+                    eprintln!("{message}");
+                }
             }
         }
         Commands::Serve {
@@ -499,6 +516,64 @@ fn export_pack(pack: &Pack, format: ExportFormatArg) -> Result<String> {
         ExportFormatArg::Jsonl => export_jsonl(pack, &notes),
         ExportFormatArg::McpContext => export_mcp_context(pack, &notes),
     }
+}
+
+fn copy_referenced_assets(pack: &Pack, destination: &Path) -> Result<usize> {
+    let mut assets = std::collections::BTreeSet::new();
+    for note in pack.scan_notes()? {
+        if let Some(asset) = note.asset {
+            assets.insert(asset);
+        }
+        for asset in extract_asset_paths(&note.body) {
+            assets.insert(asset);
+        }
+    }
+
+    let mut copied = 0usize;
+    for asset in assets {
+        ensure_safe_asset_path(&asset)?;
+        let source = pack.root.join(&asset);
+        if !source.is_file() {
+            anyhow::bail!("export asset missing: {asset}");
+        }
+        let target = destination.join(&asset);
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::copy(&source, &target)?;
+        copied += 1;
+    }
+    Ok(copied)
+}
+
+fn extract_asset_paths(body: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for token in body.split_whitespace() {
+        let token = token.trim_matches(|c: char| {
+            matches!(
+                c,
+                '`' | '"' | '\'' | '(' | ')' | '[' | ']' | '<' | '>' | ',' | ';' | ':' | '.'
+            )
+        });
+        if token.starts_with("assets/") && !out.iter().any(|existing| existing == token) {
+            out.push(token.to_string());
+        }
+    }
+    out
+}
+
+fn ensure_safe_asset_path(asset: &str) -> Result<()> {
+    let path = Path::new(asset);
+    if !asset.starts_with("assets/") || path.is_absolute() {
+        anyhow::bail!("unsafe export asset path: {asset}");
+    }
+    for component in path.components() {
+        match component {
+            std::path::Component::Normal(_) => {}
+            _ => anyhow::bail!("unsafe export asset path: {asset}"),
+        }
+    }
+    Ok(())
 }
 
 fn export_markdown_bundle(pack: &Pack, notes: &[pack_core::note::Note]) -> Result<String> {
