@@ -126,6 +126,31 @@ NOTE
 # Replace sidecar auto-created from add command with deterministic id above.
 rm -f "$PACK_DIR/notes/evidence.md"
 
+cat > "$PACK_DIR/assets/diagram.svg" <<'SVG'
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80"><rect width="120" height="80" fill="#071012"/><circle cx="38" cy="40" r="18" fill="#00f99a"/><path d="M58 40h34" stroke="#d8e5e0" stroke-width="6"/></svg>
+SVG
+cat > "$PACK_DIR/notes/diagram-image.md" <<'NOTE'
+---
+type: image
+title: 온톨로지 다이어그램
+asset: assets/diagram.svg
+tags: [gallery, ontology, media]
+created: 2026-05-19
+---
+로컬 온톨로지 그래프를 보여주는 SVG 다이어그램이다.
+NOTE
+printf '\x00\x00\x00\x18ftypmp42' > "$PACK_DIR/assets/demo.mp4"
+cat > "$PACK_DIR/notes/demo-video.md" <<'NOTE'
+---
+type: video
+title: 데모 비디오
+asset: assets/demo.mp4
+tags: [gallery, ontology, media]
+created: 2026-05-20
+---
+지식팩 검색 흐름을 짧게 보여주는 데모 비디오 클립이다.
+NOTE
+
 echo "[3/10] process inbox and build index twice"
 (cd "$PACK_DIR" && "$PACK_BIN" process >/tmp/ontopack-real-process.out)
 (cd "$PACK_DIR" && "$PACK_BIN" build --no-embed >/tmp/ontopack-real-build.out)
@@ -153,13 +178,18 @@ echo "[6/10] viewer API facets/gallery/timeline/graph/note/related"
 FACETS_JSON="$(serve_json $'GET /api/facets HTTP/1.1\r\nHost: localhost\r\n\r\n')"
 assert_json "facets include prompt and ontology" "$FACETS_JSON" '"prompt" in v["types"] and "ontology" in v["tags"]'
 GALLERY_JSON="$(serve_json $'GET /api/gallery?k=5 HTTP/1.1\r\nHost: localhost\r\n\r\n')"
-assert_json "gallery includes evidence asset" "$GALLERY_JSON" 'any(item["asset"] == "assets/evidence.png" for item in v["items"])'
+assert_json "gallery includes evidence image asset metadata" "$GALLERY_JSON" 'any(item["asset"] == "assets/evidence.png" and item["asset_url"] == "/assets/evidence.png" and item["media_kind"] == "image" for item in v["items"])'
+assert_json "gallery includes video asset metadata" "$GALLERY_JSON" 'any(item["asset"] == "assets/demo.mp4" and item["asset_url"] == "/assets/demo.mp4" and item["media_kind"] == "video" for item in v["items"])'
+ASSET_SVG_BODY="$(cd "$PACK_DIR" && "$PACK_BIN" serve --port 0 --once --request $'GET /assets/diagram.svg HTTP/1.1\r\nHost: localhost\r\n\r\n')"
+printf '%s\n' "$ASSET_SVG_BODY" | grep -q '<svg'
 TIMELINE_JSON="$(serve_json $'GET /api/timeline?type=prompt&from=2026-05-01&to=2026-05-31&k=5 HTTP/1.1\r\nHost: localhost\r\n\r\n')"
 assert_json "timeline filters prompt dates" "$TIMELINE_JSON" 'any(note["id"] == "filter-target" for note in v["notes"])'
 GRAPH_JSON="$(serve_json $'GET /api/graph?limit=20 HTTP/1.1\r\nHost: localhost\r\n\r\n')"
 assert_json "graph includes edges" "$GRAPH_JSON" 'len(v["nodes"]) >= 1 and "edges" in v'
 NOTE_JSON="$(serve_json $'GET /api/notes/lecture-outline HTTP/1.1\r\nHost: localhost\r\n\r\n')"
 assert_json "note detail returns relations" "$NOTE_JSON" 'v["id"] == "lecture-outline" and "thumbnail-hook" in v["related"]'
+VIDEO_NOTE_JSON="$(serve_json $'GET /api/notes/demo-video HTTP/1.1\r\nHost: localhost\r\n\r\n')"
+assert_json "video note returns playable media metadata" "$VIDEO_NOTE_JSON" 'v["asset_url"] == "/assets/demo.mp4" and v["media_kind"] == "video" and v["mime"] == "video/mp4"'
 RELATED_JSON="$(serve_json $'GET /api/related/lecture-outline?depth=1 HTTP/1.1\r\nHost: localhost\r\n\r\n')"
 assert_json "related follows links" "$RELATED_JSON" 'any(item["id"] == "thumbnail-hook" for item in v["related"])'
 

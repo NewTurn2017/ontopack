@@ -18,6 +18,7 @@ pub struct VectorChunkHit {
     pub note_type: String,
     pub text: String,
     pub path: String,
+    pub asset: Option<String>,
     pub distance: f32,
 }
 
@@ -184,13 +185,13 @@ impl Index {
         let (where_clause, mut params) = keyword_filter_where_clause(filters)?;
         let sql = format!(
             "WITH ranked AS (
-               SELECT n.id, n.title, n.type, n.path, bm25(notes_fts) AS score
+               SELECT n.id, n.title, n.type, n.path, n.asset, bm25(notes_fts) AS score
                FROM notes_fts JOIN notes n ON n.id = notes_fts.id
                WHERE notes_fts MATCH ? {where_clause}
                ORDER BY score
                LIMIT ?
              )
-             SELECT ranked.id, c.id, ranked.title, ranked.type, c.text, ranked.path, ranked.score
+             SELECT ranked.id, c.id, ranked.title, ranked.type, c.text, ranked.path, ranked.asset, ranked.score
              FROM ranked
              JOIN chunks c ON c.note_id = ranked.id
              WHERE c.ord = 0
@@ -200,7 +201,7 @@ impl Index {
         params.push(Value::Integer(k as i64));
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params_from_iter(params.iter()), |r| {
-            let score: f64 = r.get(6)?;
+            let score: f64 = r.get(7)?;
             Ok(crate::search::SearchHit {
                 note_id: r.get(0)?,
                 chunk_id: r.get(1)?,
@@ -208,6 +209,7 @@ impl Index {
                 note_type: r.get(3)?,
                 snippet: r.get(4)?,
                 path: r.get(5)?,
+                asset: r.get(6)?,
                 score: -score,
                 rank_source: crate::search::RankSource::Keyword,
             })
@@ -282,7 +284,7 @@ impl Index {
                FROM vec_chunks
                WHERE embedding MATCH ?1 AND k = ?2
              )
-             SELECT c.id, c.note_id, n.title, n.type, c.text, n.path, matches.distance
+             SELECT c.id, c.note_id, n.title, n.type, c.text, n.path, n.asset, matches.distance
              FROM matches
              JOIN chunk_embedding_map m ON m.rowid = matches.rowid
              JOIN chunks c ON c.id = m.chunk_id
@@ -297,7 +299,8 @@ impl Index {
                 note_type: r.get(3)?,
                 text: r.get(4)?,
                 path: r.get(5)?,
-                distance: r.get(6)?,
+                asset: r.get(6)?,
+                distance: r.get(7)?,
             })
         })?;
         let mut out = Vec::new();
@@ -323,6 +326,7 @@ impl Index {
                 note_type: hit.note_type,
                 snippet: hit.text,
                 path: hit.path,
+                asset: hit.asset,
                 score: 1.0 - f64::from(hit.distance),
                 rank_source: crate::search::RankSource::Vector,
             })

@@ -30,6 +30,10 @@ pub struct SearchCard {
     pub path: String,
     pub score: f64,
     pub rank_source: String,
+    pub asset: Option<String>,
+    pub asset_url: Option<String>,
+    pub media_kind: Option<String>,
+    pub mime: Option<String>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -48,6 +52,9 @@ pub struct NoteDetail {
     pub tags: Vec<String>,
     pub created: Option<String>,
     pub asset: Option<String>,
+    pub asset_url: Option<String>,
+    pub media_kind: Option<String>,
+    pub mime: Option<String>,
     pub related: Vec<String>,
     pub body: String,
     pub path: String,
@@ -121,6 +128,9 @@ pub struct GalleryItem {
     pub note_type: String,
     pub tags: Vec<String>,
     pub asset: Option<String>,
+    pub asset_url: Option<String>,
+    pub media_kind: Option<String>,
+    pub mime: Option<String>,
     pub path: String,
     pub caption: String,
 }
@@ -184,6 +194,7 @@ pub fn note(pack: &Pack, id: &str) -> Result<NoteDetail> {
     let Some(note) = pack.scan_notes()?.into_iter().find(|note| note.id == id) else {
         bail!("note not found: {id}");
     };
+    let media = media_metadata(note.asset.as_deref());
     Ok(NoteDetail {
         id: note.id,
         title: note.title,
@@ -191,6 +202,9 @@ pub fn note(pack: &Pack, id: &str) -> Result<NoteDetail> {
         tags: note.tags,
         created: note.created,
         asset: note.asset,
+        asset_url: media.asset_url,
+        media_kind: media.media_kind,
+        mime: media.mime,
         related: note.related,
         body: note.body,
         path: note.path.to_string_lossy().to_string(),
@@ -294,12 +308,16 @@ pub fn gallery(pack: &Pack, note_type: Option<&str>, k: usize) -> Result<Gallery
         if note.asset.is_none() || note_type.is_some_and(|note_type| note.note_type != note_type) {
             continue;
         }
+        let media = media_metadata(note.asset.as_deref());
         items.push(GalleryItem {
             id: note.id,
             title: note.title,
             note_type: note.note_type,
             tags: note.tags,
             asset: note.asset,
+            asset_url: media.asset_url,
+            media_kind: media.media_kind,
+            mime: media.mime,
             path: note.path.to_string_lossy().to_string(),
             caption: note.body.trim().to_string(),
         });
@@ -311,6 +329,7 @@ pub fn gallery(pack: &Pack, note_type: Option<&str>, k: usize) -> Result<Gallery
 }
 
 fn search_card(hit: SearchHit) -> SearchCard {
+    let media = media_metadata(hit.asset.as_deref());
     SearchCard {
         note_id: hit.note_id,
         chunk_id: hit.chunk_id,
@@ -320,7 +339,99 @@ fn search_card(hit: SearchHit) -> SearchCard {
         path: hit.path,
         score: hit.score,
         rank_source: rank_source_label(hit.rank_source).to_string(),
+        asset: hit.asset,
+        asset_url: media.asset_url,
+        media_kind: media.media_kind,
+        mime: media.mime,
     }
+}
+
+struct MediaMetadata {
+    asset_url: Option<String>,
+    media_kind: Option<String>,
+    mime: Option<String>,
+}
+
+fn media_metadata(asset: Option<&str>) -> MediaMetadata {
+    let Some(asset) = asset else {
+        return MediaMetadata {
+            asset_url: None,
+            media_kind: None,
+            mime: None,
+        };
+    };
+    let mime = mime_for_asset(asset).to_string();
+    MediaMetadata {
+        asset_url: asset_url(asset),
+        media_kind: Some(media_kind_for_mime(&mime).to_string()),
+        mime: Some(mime),
+    }
+}
+
+pub fn mime_for_asset(asset: &str) -> &'static str {
+    match asset
+        .rsplit('.')
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "svg" => "image/svg+xml",
+        "mp4" | "m4v" => "video/mp4",
+        "webm" => "video/webm",
+        "mov" | "qt" => "video/quicktime",
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "m4a" => "audio/mp4",
+        "pdf" => "application/pdf",
+        _ => "application/octet-stream",
+    }
+}
+
+fn media_kind_for_mime(mime: &str) -> &'static str {
+    if mime.starts_with("image/") {
+        "image"
+    } else if mime.starts_with("video/") {
+        "video"
+    } else if mime.starts_with("audio/") {
+        "audio"
+    } else if mime == "application/octet-stream" {
+        "unknown"
+    } else {
+        "file"
+    }
+}
+
+fn asset_url(asset: &str) -> Option<String> {
+    let relative = asset.strip_prefix("assets/").unwrap_or(asset);
+    if relative.is_empty() || relative.starts_with('/') || relative.contains("..") {
+        return None;
+    }
+    Some(format!("/assets/{}", percent_encode_path(relative)))
+}
+
+fn percent_encode_path(path: &str) -> String {
+    path.split('/')
+        .map(percent_encode_segment)
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn percent_encode_segment(segment: &str) -> String {
+    let mut out = String::new();
+    for byte in segment.as_bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(*byte as char)
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
 }
 
 fn rank_source_label(source: RankSource) -> &'static str {
@@ -355,6 +466,7 @@ mod tests {
         assert_eq!(response.hits[0].note_id, "hook");
         assert_eq!(response.hits[0].chunk_id, "hook#0000");
         assert_eq!(response.hits[0].rank_source, "keyword");
+        assert_eq!(response.hits[0].asset_url, None);
     }
 
     #[test]
@@ -502,5 +614,66 @@ common term",
         assert_eq!(response.items.len(), 1);
         assert_eq!(response.items[0].id, "pic");
         assert_eq!(response.items[0].asset.as_deref(), Some("assets/pic.png"));
+        assert_eq!(
+            response.items[0].asset_url.as_deref(),
+            Some("/assets/pic.png")
+        );
+        assert_eq!(response.items[0].media_kind.as_deref(), Some("image"));
+        assert_eq!(response.items[0].mime.as_deref(), Some("image/png"));
+    }
+
+    #[test]
+    fn note_api_returns_media_metadata() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(
+            root.join("notes/clip.md"),
+            "---
+type: video
+title: Demo Clip
+asset: assets/demo clip.mp4
+---
+영상 캡션",
+        )
+        .unwrap();
+        let pack = Pack::open(&root).unwrap();
+
+        let response = note(&pack, "clip").unwrap();
+        assert_eq!(response.asset.as_deref(), Some("assets/demo clip.mp4"));
+        assert_eq!(
+            response.asset_url.as_deref(),
+            Some("/assets/demo%20clip.mp4")
+        );
+        assert_eq!(response.media_kind.as_deref(), Some("video"));
+        assert_eq!(response.mime.as_deref(), Some("video/mp4"));
+    }
+
+    #[test]
+    fn search_api_returns_media_metadata_for_asset_hits() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(
+            root.join("notes/pic.md"),
+            "---
+type: image
+title: Pic
+asset: assets/pic.webp
+---
+검색 가능한 이미지 캡션",
+        )
+        .unwrap();
+        let pack = Pack::open(&root).unwrap();
+        pack.build_index().unwrap();
+
+        let response = search(&pack, "이미지", None, 10).unwrap();
+        assert_eq!(response.hits[0].asset.as_deref(), Some("assets/pic.webp"));
+        assert_eq!(
+            response.hits[0].asset_url.as_deref(),
+            Some("/assets/pic.webp")
+        );
+        assert_eq!(response.hits[0].media_kind.as_deref(), Some("image"));
+        assert_eq!(response.hits[0].mime.as_deref(), Some("image/webp"));
     }
 }

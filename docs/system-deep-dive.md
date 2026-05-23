@@ -77,7 +77,7 @@ created: 2026-05-21
 Whiteboard caption searchable by keyword.
 ```
 
-Today the viewer shows the media sidecar as a card, but it does **not yet stream/render the actual image or video file**. That is the next UI/backend milestone.
+The viewer now serves local `assets/` files through safe `/assets/<path>` URLs and can render image/video sidecars in gallery cards and selected-note previews. It still does not generate thumbnails, transcode videos, or extract video timelines.
 
 ## 3. Detailed execution guide
 
@@ -306,13 +306,15 @@ Core and CLI support vector/hybrid with `real-embed`, but server APIs are curren
 
 ### M5A — Serve local assets safely
 
+Status: implemented as the first pass.
+
 Goal: images/videos become visible in the UI.
 
 Backend tasks:
 
-- Add `GET /assets/<path>` route.
-- Resolve only inside `pack.root/assets`; reject traversal like `../`.
-- Return correct content types:
+- Implemented `GET /assets/<path>` route.
+- Resolves only inside `pack.root/assets`; rejects traversal like `../`.
+- Returns correct content types:
   - images: `image/png`, `image/jpeg`, `image/webp`, `image/gif`, `image/svg+xml`
   - videos: `video/mp4`, `video/webm`, `video/quicktime`
   - fallback: `application/octet-stream`
@@ -321,7 +323,7 @@ Backend tasks:
 
 API tasks:
 
-- Extend gallery/note detail response with:
+- Extended gallery/note detail/search-card responses with:
   - `asset_url`
   - `media_kind`: `image | video | audio | file | unknown`
   - `mime`

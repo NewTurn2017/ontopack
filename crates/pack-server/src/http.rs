@@ -6,6 +6,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::path::{Component, Path};
 use std::time::{Duration, Instant};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -183,6 +184,9 @@ fn route(pack: &Pack, target: &str) -> Result<HttpResponse> {
             read_usize(&query, "limit", 100),
         )?),
         _ => {
+            if let Some(asset_path) = path.strip_prefix("/assets/") {
+                return asset_response(pack, &percent_decode(asset_path)?);
+            }
             if let Some(id) = path.strip_prefix("/api/notes/") {
                 return api_result(api::note(pack, &percent_decode(id)?));
             }
@@ -196,6 +200,41 @@ fn route(pack: &Pack, target: &str) -> Result<HttpResponse> {
             Ok(json_error(404, "not found"))
         }
     }
+}
+
+fn asset_response(pack: &Pack, asset_path: &str) -> Result<HttpResponse> {
+    if !is_safe_relative_asset_path(asset_path) {
+        return Ok(json_error(404, "asset not found"));
+    }
+    let assets_root = pack.root.join("assets");
+    let requested = assets_root.join(asset_path);
+    if !requested.is_file() {
+        return Ok(json_error(404, "asset not found"));
+    }
+    let assets_root = assets_root.canonicalize()?;
+    let requested = requested.canonicalize()?;
+    if !requested.starts_with(&assets_root) {
+        return Ok(json_error(404, "asset not found"));
+    }
+    let content_type = api::mime_for_asset(asset_path);
+    Ok(HttpResponse {
+        status: 200,
+        content_type,
+        body: std::fs::read(requested)?,
+    })
+}
+
+fn is_safe_relative_asset_path(path: &str) -> bool {
+    if path.is_empty() {
+        return false;
+    }
+    let path = Path::new(path);
+    !path.components().any(|component| {
+        matches!(
+            component,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) | Component::CurDir
+        )
+    })
 }
 
 fn api_result<T: Serialize>(result: Result<T>) -> Result<HttpResponse> {
@@ -417,6 +456,18 @@ Host: localhost
     }
 
     #[test]
+    fn viewer_assets_render_media_previews() {
+        let js = viewer::app_js();
+        let css = viewer::style_css();
+        assert!(js.contains("function mediaMarkup"));
+        assert!(js.contains("loading=\"lazy\""));
+        assert!(js.contains("preload=\"metadata\""));
+        assert!(js.contains("function galleryCard"));
+        assert!(css.contains(".media-preview"));
+        assert!(css.contains(".gallery-card video"));
+    }
+
+    #[test]
     fn api_ask_http_returns_context_blocks() {
         let dir = tempdir().unwrap();
         let root = dir.path().join("p");
@@ -457,5 +508,58 @@ Host: localhost
         let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
         assert_eq!(body["items"][0]["id"], "pic");
         assert_eq!(body["items"][0]["asset"], "assets/pic.png");
+        assert_eq!(body["items"][0]["asset_url"], "/assets/pic.png");
+        assert_eq!(body["items"][0]["media_kind"], "image");
+    }
+
+    #[test]
+    fn asset_route_serves_local_pack_media() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(root.join("assets/pic.png"), [0x89, 0x50, 0x4e, 0x47]).unwrap();
+        let pack = Pack::open(&root).unwrap();
+
+        let response = handle_request(
+            &pack,
+            "GET /assets/pic.png HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        )
+        .unwrap();
+        assert_eq!(response.status, 200);
+        assert_eq!(response.content_type, "image/png");
+        assert_eq!(response.body, vec![0x89, 0x50, 0x4e, 0x47]);
+    }
+
+    #[test]
+    fn asset_route_decodes_spaces_and_serves_video_metadata() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(root.join("assets/demo clip.mp4"), [0, 0, 0, 24]).unwrap();
+        let pack = Pack::open(&root).unwrap();
+
+        let response = handle_request(
+            &pack,
+            "GET /assets/demo%20clip.mp4 HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        )
+        .unwrap();
+        assert_eq!(response.status, 200);
+        assert_eq!(response.content_type, "video/mp4");
+    }
+
+    #[test]
+    fn asset_route_rejects_path_traversal() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(root.join("secret.txt"), "secret").unwrap();
+        let pack = Pack::open(&root).unwrap();
+
+        let response = handle_request(
+            &pack,
+            "GET /assets/../secret.txt HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        )
+        .unwrap();
+        assert_eq!(response.status, 404);
     }
 }

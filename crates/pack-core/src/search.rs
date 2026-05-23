@@ -22,6 +22,7 @@ pub struct SearchHit {
     pub note_type: String,
     pub snippet: String,
     pub path: String,
+    pub asset: Option<String>,
     /// Higher is better for SearchHit/RRF results.
     pub score: f64,
     pub rank_source: RankSource,
@@ -118,6 +119,7 @@ mod tests {
             note_type: "note".to_string(),
             snippet: format!("{note_id} snippet"),
             path: format!("notes/{note_id}.md"),
+            asset: None,
             score: 0.0,
             rank_source,
         }

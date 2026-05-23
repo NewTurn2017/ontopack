@@ -168,16 +168,48 @@ function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+function mediaMarkup(item, size = 'thumb', interactive = false) {
+  if (!item || !item.asset_url) return '';
+  const title = escapeHtml(item.title || item.asset || 'media asset');
+  const src = escapeHtml(item.asset_url);
+  const kind = item.media_kind || '';
+  if (kind === 'image') {
+    return `<figure class="media-preview media-${size}"><img src="${src}" alt="${title}" loading="lazy" decoding="async"></figure>`;
+  }
+  if (kind === 'video') {
+    return interactive
+      ? `<figure class="media-preview media-${size}"><video src="${src}" controls preload="metadata" title="${title}"></video></figure>`
+      : `<figure class="media-preview media-${size} media-token"><span>VIDEO</span></figure>`;
+  }
+  if (kind === 'audio') {
+    return interactive
+      ? `<figure class="media-preview media-${size}"><audio src="${src}" controls preload="metadata" title="${title}"></audio></figure>`
+      : `<figure class="media-preview media-${size} media-token"><span>AUDIO</span></figure>`;
+  }
+  return `<figure class="media-preview media-${size} media-token"><span>${escapeHtml((item.mime || 'FILE').split('/').pop().toUpperCase())}</span></figure>`;
+}
+
 function card(hit) {
   const id = hit.note_id || hit.id;
   const type = hit.note_type || 'record';
   const meta = hit.chunk_id || hit.id || '';
   return `<button class="card source-card type-${escapeHtml(type)}" data-note-id="${escapeHtml(id)}">
+    ${mediaMarkup(hit, 'thumb', false)}
     <span class="card-kicker">${escapeHtml(type)}</span>
     <strong>${escapeHtml(hit.title)}</strong>
     <span class="meta-line">${escapeHtml(meta)}</span>
     <p>${escapeHtml(hit.snippet || hit.caption || hit.created || '')}</p>
   </button>`;
+}
+
+function galleryCard(item) {
+  return `<article class="card gallery-card" data-note-id="${escapeHtml(item.id)}" role="button" tabindex="0">
+    ${mediaMarkup(item, 'gallery', item.media_kind === 'video' || item.media_kind === 'audio')}
+    <span class="card-kicker">${escapeHtml(item.note_type)}</span>
+    <strong>${escapeHtml(item.title)}</strong>
+    <span class="meta-line">${escapeHtml(item.asset || '')}</span>
+    <p>${escapeHtml(item.caption || '')}</p>
+  </article>`;
 }
 
 function filterParams() {
@@ -243,7 +275,8 @@ async function openNote(id) {
   document.querySelectorAll('[data-note-id]').forEach((el) => el.classList.toggle('selected', el.dataset.noteId === id));
   const note = await fetchJson(`/api/notes/${encodeURIComponent(id)}`);
   $('note-detail').classList.remove('muted');
-  $('note-detail').innerHTML = `<h3>${escapeHtml(note.title)}</h3>
+  $('note-detail').innerHTML = `${mediaMarkup(note, 'large', true)}
+    <h3>${escapeHtml(note.title)}</h3>
     <p class="meta">${escapeHtml(note.note_type)} · ${escapeHtml(note.created || 'no date')} · ${escapeHtml(note.tags.join(', '))}</p>
     <pre>${escapeHtml(note.body)}</pre>`;
   const related = await fetchJson(`/api/related/${encodeURIComponent(id)}?depth=1`);
@@ -264,12 +297,7 @@ async function loadGallery() {
   if (type) params.set('type', type);
   params.set('k', '12');
   const data = await fetchJson(`/api/gallery?${params.toString()}`);
-  $('gallery').innerHTML = data.items.length ? data.items.map((item) => `<button class="card gallery-card" data-note-id="${escapeHtml(item.id)}">
-    <span class="card-kicker">${escapeHtml(item.note_type)}</span>
-    <strong>${escapeHtml(item.title)}</strong>
-    <span class="meta-line">${escapeHtml(item.asset || '')}</span>
-    <p>${escapeHtml(item.caption || '')}</p>
-  </button>`).join('') : '<p class="muted empty-state">asset 사이드카 노트 없음</p>';
+  $('gallery').innerHTML = data.items.length ? data.items.map(galleryCard).join('') : '<p class="muted empty-state">asset 사이드카 노트 없음</p>';
 }
 
 async function loadGraph() {
@@ -312,8 +340,17 @@ for (const id of ['type-filter', 'tag-filter', 'from-filter', 'to-filter']) {
 }
 
 document.body.addEventListener('click', async (event) => {
+  if (event.target.closest('video, audio, a')) return;
   const target = event.target.closest('[data-note-id]');
   if (target) await openNote(target.dataset.noteId);
+});
+
+document.body.addEventListener('keydown', async (event) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  const target = event.target.closest('[data-note-id]');
+  if (!target) return;
+  event.preventDefault();
+  await openNote(target.dataset.noteId);
 });
 
 loadFacets().then(refreshPanels).catch(console.error);
@@ -542,6 +579,50 @@ input::placeholder { color: rgba(216,229,224,.45); }
 .card-kicker { color: var(--green); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; }
 .meta-line, .meta, .muted { color: var(--muted); }
 .empty-state { margin: 0; padding: 14px; border: 1px dashed rgba(164,255,218,.16); }
+.media-preview {
+  position: relative;
+  overflow: hidden;
+  margin: 0 0 12px;
+  border: 1px solid rgba(0,249,154,.2);
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, rgba(0,249,154,.12), transparent 38%),
+    repeating-linear-gradient(90deg, rgba(255,255,255,.035), rgba(255,255,255,.035) 1px, transparent 1px, transparent 12px),
+    #071012;
+  box-shadow: inset 0 0 22px rgba(0,0,0,.5);
+}
+.media-preview::after {
+  content: "MEDIA";
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  color: rgba(0,249,154,.72);
+  font: 10px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  letter-spacing: .12em;
+  pointer-events: none;
+}
+.media-preview img, .media-preview video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #020607;
+}
+.media-preview audio { display: block; width: 100%; margin: 26px 0 12px; }
+.media-thumb { float: right; width: 118px; height: 78px; margin: 0 0 10px 14px; }
+.media-gallery { aspect-ratio: 16 / 9; min-height: 120px; }
+.media-large { aspect-ratio: 16 / 9; max-height: 420px; }
+.media-token { display: grid; place-items: center; min-height: 78px; }
+.media-token span {
+  color: var(--green);
+  border: 1px solid rgba(0,249,154,.28);
+  padding: 8px 12px;
+  background: rgba(0,0,0,.28);
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+.gallery-card { cursor: pointer; }
+.gallery-card video { cursor: auto; }
 .terminal-output { min-height: 90px; }
 .terminal-line { color: var(--green); }
 .note-detail h3 { margin: 0 0 6px; color: #fff; }

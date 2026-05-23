@@ -72,7 +72,37 @@ LLM 답변을 서버에서 직접 생성하지 않고 citation-ready context blo
 
 ### `GET /api/gallery?type=<type>&k=<n>`
 
-`asset` frontmatter가 있는 사이드카 노트를 갤러리 카드로 반환합니다.
+`asset` frontmatter가 있는 사이드카 노트를 갤러리 카드로 반환합니다. 각 항목은 실제 로컬 미디어를 표시할 수 있도록 `asset_url`, `media_kind`, `mime`을 포함합니다.
+
+```json
+{
+  "items": [
+    {
+      "id": "pic",
+      "title": "보드 사진",
+      "note_type": "image",
+      "tags": ["gallery"],
+      "asset": "assets/pic.png",
+      "asset_url": "/assets/pic.png",
+      "media_kind": "image",
+      "mime": "image/png",
+      "path": "/path/to/notes/pic.md",
+      "caption": "캡션"
+    }
+  ]
+}
+```
+
+### `GET /assets/<asset-path>`
+
+팩의 `assets/` 안에 있는 파일만 localhost로 제공합니다. `../` traversal은 거부됩니다. 이미지와 비디오는 viewer에서 lazy thumbnail 또는 metadata preload preview로 표시됩니다.
+
+예:
+
+```text
+/assets/pic.png
+/assets/demo%20clip.mp4
+```
 
 ### `GET /api/notes/<id>`
 
@@ -86,6 +116,9 @@ LLM 답변을 서버에서 직접 생성하지 않고 citation-ready context blo
   "tags": ["youtube"],
   "created": "2026-02-01",
   "asset": null,
+  "asset_url": null,
+  "media_kind": null,
+  "mime": null,
   "related": ["project-a"],
   "body": "본문",
   "path": "/path/to/notes/hook.md"
@@ -107,5 +140,6 @@ LLM 답변을 서버에서 직접 생성하지 않고 citation-ready context blo
 ## 현재 한계
 
 - 서버 검색은 기본 keyword mode입니다. vector/hybrid는 `pack search --mode vector|hybrid`와 `real-embed` 경로에서 먼저 검증된 뒤 서버 API에 연결할 예정입니다.
-- 뷰어는 framework-free MVP입니다. 갤러리는 asset 사이드카 카드 중심이고, 그래프는 아직 lightweight 링크 요약입니다. 시각화 라이브러리는 API와 사용 패턴이 안정된 뒤 추가합니다.
+- 뷰어는 framework-free MVP입니다. 갤러리와 선택 노트는 asset sidecar의 이미지/비디오를 실제로 표시하지만, 아직 썸네일 생성/트랜스코딩/비디오 타임라인 인덱싱은 하지 않습니다.
+- 그래프는 아직 lightweight 링크 요약입니다. 시각화 라이브러리는 API와 사용 패턴이 안정된 뒤 추가합니다.
 - `pack open`의 실제 브라우저 실행은 OS 명령(`open`, `xdg-open`, `cmd /C start`)에 의존합니다. 자동화에서는 `--no-browser --print-url`을 사용하세요.
