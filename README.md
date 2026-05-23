@@ -40,7 +40,7 @@
 - `pack-mcp --pack-root <팩>` — Claude/Codex용 stdio MCP 서버
 - MCP 도구: `search`, `ask`, `related`, `add`, `timeline`, `media/list_pending`, `media/read_note`, `media/write_enrichment`, `index/rebuild`
 - `ask`는 LLM 답변을 코어에서 생성하지 않고 citation-ready `context_blocks`를 반환
-- `pack enrich-pending --provider-command <cmd>` — pending media sidecar를 외부 AI/provider worker 명령으로 자동 caption/OCR/transcript enrichment 후 검색 인덱스 재빌드
+- `pack enrich-pending --provider-command scripts/providers/auto_media_worker.py` — API 키가 있으면 API provider를 우선 사용하고, 없으면 macOS 로컬 Ollama/Tesseract/FFmpeg worker로 pending media enrichment 후 검색 인덱스 재빌드
 - media 도구는 Claude/Codex 같은 외부 AI worker가 로컬 asset sidecar를 읽고 caption/OCR/transcript/summary를 안전한 managed block에 쓰도록 연결
 - `related`/`timeline`/`add`/media 동작은 `pack-core`가 소유하고 MCP는 얇은 JSON-RPC 어댑터로 유지
 - 설정 예시는 `docs/mcp.md`, provider worker 예시는 `docs/providers.md` 참고

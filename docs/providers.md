@@ -6,13 +6,76 @@ OntoPack keeps storage deterministic and lets external workers do model-specific
 - stdout: `EnrichmentPatch` JSON with any of `caption`, `tags`, `ocr`, `transcript`, `summary`, `keyframes`, `provider`, `model`, `generated_at`
 - stderr + non-zero exit: honest failure; OntoPack stops and leaves the current sidecar unchanged
 
-Run one pending item through a provider:
+Run one pending item through the recommended router:
 
 ```bash
-pack enrich-pending --provider-command scripts/providers/fixture_media_worker.py --limit 1
+pack enrich-pending --provider-command scripts/providers/auto_media_worker.py --limit 1
 ```
 
+`auto_media_worker.py` prioritizes API mode when credentials exist, then falls back to local tools. Override behavior with `ONTOPACK_PROVIDER_MODE=api|local|auto`.
+
+## macOS latest local setup
+
+For the current Mac-first path, install local media tools with Homebrew:
+
+```bash
+brew install ollama tesseract ffmpeg
+ollama pull gemma3
+```
+
+Recommended local-only run:
+
+```bash
+ONTOPACK_PROVIDER_MODE=local \
+  OLLAMA_MODEL=gemma3 \
+  TESSERACT_LANG=eng+kor \
+  pack enrich-pending --provider-command /path/to/ontopack/scripts/providers/auto_media_worker.py --limit 1
+```
+
+Behavior by media type:
+
+- image: Ollama vision caption when `ollama` is installed; Tesseract OCR when `tesseract` is installed.
+- video/audio: ffprobe metadata through `ffmpeg`; keyframe/STT extraction should be added as the next provider expansion.
+
+## API priority option
+
+When `OPENAI_API_KEY` is present and mode is `auto`, the router uses the API worker before local tools:
+
+```bash
+export OPENAI_API_KEY=...
+export OPENAI_MODEL=gpt-4.1-mini
+pack enrich-pending --provider-command /path/to/ontopack/scripts/providers/auto_media_worker.py --limit 1
+```
+
+Force local even when an API key exists:
+
+```bash
+ONTOPACK_PROVIDER_MODE=local pack enrich-pending --provider-command /path/to/ontopack/scripts/providers/auto_media_worker.py --limit 1
+```
+
+## Windows future path
+
+The provider contract is OS-neutral: an executable reads JSON from stdin and writes `EnrichmentPatch` JSON to stdout. For Windows, keep the same `pack enrich-pending --provider-command ...` command shape and install equivalents with winget/Chocolatey or native installers:
+
+- Ollama for Windows for local vision models.
+- Tesseract OCR Windows builds or package-manager install.
+- FFmpeg Windows build in PATH for video/audio metadata/extraction.
+- whisper.cpp or another local STT executable in PATH for future transcript workers.
+
+No OntoPack storage format should change for Windows; only provider executable discovery/setup should vary.
+
 ## Bundled providers
+
+### `scripts/providers/auto_media_worker.py`
+
+Recommended entrypoint. Routes to API first when `OPENAI_API_KEY` is set, otherwise local. Override worker commands with:
+
+- `ONTOPACK_API_WORKER`
+- `ONTOPACK_LOCAL_WORKER`
+
+### `scripts/providers/local_media_worker.py`
+
+Local-only worker for macOS-first setup. Uses Ollama/Tesseract/ffprobe when available and never calls a cloud API.
 
 ### `scripts/providers/fixture_media_worker.py`
 
