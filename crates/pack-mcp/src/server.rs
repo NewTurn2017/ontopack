@@ -167,7 +167,8 @@ fn tool_schemas() -> Vec<Value> {
                             "type": "object",
                             "properties": {
                                 "time": { "type": "string" },
-                                "text": { "type": "string" }
+                                "text": { "type": "string" },
+                                "asset": { "type": "string" }
                             },
                             "required": ["time", "text"]
                         }

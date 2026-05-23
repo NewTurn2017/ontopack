@@ -91,7 +91,7 @@ created: 2026-05-21
 Whiteboard caption searchable by keyword.
 ```
 
-The viewer now serves local `assets/` files through safe `/assets/<path>` URLs and can render image/video sidecars in gallery cards and selected-note previews. It still does not generate thumbnails, transcode videos, or extract video timelines.
+The viewer now serves local `assets/` files through safe `/assets/<path>` URLs and can render image/video sidecars in gallery cards and selected-note previews. The local provider can also write derived keyframe JPEGs under `assets/.derived/<note-id>/` and reference them from the enrichment keyframes block; richer timeline UI over those frames remains future work.
 
 ## 3. Detailed execution guide
 

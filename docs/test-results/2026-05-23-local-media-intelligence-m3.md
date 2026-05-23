@@ -6,7 +6,7 @@ Goal: move the post-MVP media path beyond static metadata by making video/audio 
 
 - `scripts/providers/local_media_worker.py` now keeps the Mac-local, no-cloud behavior but expands video/audio handling:
   - ffprobe metadata still populates `summary`.
-  - video files emit deterministic keyframe timestamp candidates in the existing `keyframes` field.
+  - video files emit deterministic keyframe entries in the existing `keyframes` field. When ffmpeg can decode the input, the worker stores derived JPEGs under `assets/.derived/<note-id>/` and includes the path in `keyframes[].asset`.
   - whisper.cpp transcription runs when `WHISPER_MODEL` or `WHISPER_CPP_MODEL` is configured and the media has an audio stream.
   - ffmpeg converts audio to temporary 16 kHz mono WAV for whisper-cli, then deletes the temp directory.
 - The worker remains resilient: missing whisper model/tool does not fail metadata/keyframe enrichment; it simply skips transcript generation.
@@ -36,6 +36,5 @@ Run in this slice:
 
 ## Known gaps
 
-- Keyframes are timestamp candidates only; actual extracted thumbnail assets should be a follow-up once the pack has a durable derivative-asset location.
 - Live whisper transcription was not run because no specific ggml whisper model path was selected for the project default.
 - API providers for Gemini/OpenAI video/audio are separate future sibling workers, not part of this local-only worker slice.

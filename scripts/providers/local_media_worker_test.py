@@ -98,8 +98,21 @@ def test_video_metadata_uses_local_tools_model_label():
 print('{"format":{"duration":"1.0","format_name":"mov"},"streams":[{"codec_type":"video","codec_name":"h264","width":1920,"height":1080}]}')
 """,
         )
+        write_executable(
+            bin_dir / "ffmpeg",
+            """#!/usr/bin/env python3
+import sys
+from pathlib import Path
+Path(sys.argv[-1]).write_bytes(b"fake jpg")
+""",
+        )
         result = run_worker(
-            {"note_id": "x", "note_type": "video", "asset_abs_path": str(Path(tmp) / "x.mp4")},
+            {
+                "note_id": "video/demo",
+                "note_type": "video",
+                "asset_path": "assets/x.mp4",
+                "asset_abs_path": str(Path(tmp) / "assets" / "x.mp4"),
+            },
             {"PATH": f"{bin_dir}{os.pathsep}/usr/bin:/bin"},
         )
         assert result.returncode == 0, result.stderr
@@ -108,8 +121,13 @@ print('{"format":{"duration":"1.0","format_name":"mov"},"streams":[{"codec_type"
         assert patch["model"] == "local-tools"
         assert "ffprobe" in patch["tags"]
         assert patch["keyframes"] == [
-            {"time": "00:00:00", "text": "Representative video frame candidate at 00:00:00."}
+            {
+                "time": "00:00:00",
+                "text": "Representative video frame extracted at 00:00:00.",
+                "asset": "assets/.derived/video-demo/keyframe-0000.jpg",
+            }
         ]
+        assert (Path(tmp) / "assets" / ".derived" / "video-demo" / "keyframe-0000.jpg").exists()
 
 
 def test_video_transcript_uses_whisper_when_model_is_configured():
@@ -128,8 +146,11 @@ print('{"format":{"duration":"12.0","format_name":"mov"},"streams":[{"codec_type
             f"""#!/usr/bin/env python3
 import json, sys
 from pathlib import Path
-Path({str(calls)!r}).write_text(json.dumps({{"ffmpeg": sys.argv[1:]}}))
-Path(sys.argv[-1]).write_bytes(b"fake wav")
+path = Path({str(calls)!r})
+data = json.loads(path.read_text()) if path.exists() else {{}}
+data.setdefault("ffmpeg", []).append(sys.argv[1:])
+path.write_text(json.dumps(data))
+Path(sys.argv[-1]).write_bytes(b"fake derived output")
 """,
         )
         write_executable(
@@ -144,7 +165,12 @@ print("[00:00:00.000 --> 00:00:02.000] local transcript")
 """,
         )
         result = run_worker(
-            {"note_id": "x", "note_type": "video", "asset_abs_path": str(Path(tmp) / "x.mp4")},
+            {
+                "note_id": "video/demo",
+                "note_type": "video",
+                "asset_path": "assets/x.mp4",
+                "asset_abs_path": str(Path(tmp) / "assets" / "x.mp4"),
+            },
             {
                 "PATH": f"{bin_dir}{os.pathsep}/usr/bin:/bin",
                 "WHISPER_MODEL": "/models/ggml-base.bin",
@@ -157,10 +183,12 @@ print("[00:00:00.000 --> 00:00:02.000] local transcript")
         assert patch["model"] == "local-tools+whisper"
         assert "whisper-cpp" in patch["tags"]
         assert [frame["time"] for frame in patch["keyframes"]] == ["00:00:00", "00:00:06", "00:00:11"]
+        assert patch["keyframes"][0]["asset"] == "assets/.derived/video-demo/keyframe-0000.jpg"
         calls_data = json.loads(calls.read_text())
         assert "-m" in calls_data["whisper"]
         assert "/models/ggml-base.bin" in calls_data["whisper"]
-        assert "-ar" in calls_data["ffmpeg"]
+        assert any("-ar" in call for call in calls_data["ffmpeg"])
+        assert any("-frames:v" in call for call in calls_data["ffmpeg"])
 
 
 def main():

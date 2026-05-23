@@ -17,6 +17,8 @@ pub enum EnrichmentStatus {
 pub struct EnrichmentKeyframe {
     pub time: String,
     pub text: String,
+    #[serde(default)]
+    pub asset: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -131,6 +133,11 @@ fn render_managed_block(patch: &EnrichmentPatch) -> String {
             out.push_str(&keyframe.time);
             out.push_str("] ");
             out.push_str(&keyframe.text);
+            if let Some(asset) = keyframe.asset.as_deref().filter(|value| !value.is_empty()) {
+                out.push_str(" — `");
+                out.push_str(asset);
+                out.push('`');
+            }
             out.push('\n');
         }
     }
@@ -205,5 +212,21 @@ mod tests {
         };
         let enriched = apply_enrichment_patch("본문", &patch).unwrap();
         assert_eq!(status_for_body(&enriched, true), EnrichmentStatus::Done);
+    }
+
+    #[test]
+    fn keyframe_assets_render_into_managed_block() {
+        let patch = EnrichmentPatch {
+            caption: Some("영상 캡션".to_string()),
+            keyframes: vec![EnrichmentKeyframe {
+                time: "00:00:01".to_string(),
+                text: "대표 프레임".to_string(),
+                asset: Some("assets/.derived/video/keyframe-0000.jpg".to_string()),
+            }],
+            ..EnrichmentPatch::default()
+        };
+        let enriched = apply_enrichment_patch("본문", &patch).unwrap();
+        assert!(enriched.contains("- [00:00:01] 대표 프레임"));
+        assert!(enriched.contains("assets/.derived/video/keyframe-0000.jpg"));
     }
 }

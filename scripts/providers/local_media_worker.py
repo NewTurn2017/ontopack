@@ -137,6 +137,77 @@ def keyframe_candidates(data: dict[str, Any]) -> list[dict[str, str]]:
     return frames
 
 
+def safe_slug(value: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", value).strip(".-")
+    return slug or "asset"
+
+
+def pack_root_for_asset(asset_abs_path: str, asset_path: Optional[str]) -> Optional[Path]:
+    abs_path = Path(asset_abs_path).resolve()
+    if asset_path:
+        parts = Path(asset_path).parts
+        if parts and parts[0] == "assets":
+            root = abs_path
+            for _ in parts:
+                root = root.parent
+            return root
+    for parent in [abs_path.parent, *abs_path.parents]:
+        if parent.name == "assets":
+            return parent.parent
+    return None
+
+
+def extract_keyframe_assets(
+    path: str, payload: dict, candidates: list[dict[str, str]]
+) -> list[dict[str, str]]:
+    if not candidates or not shutil.which("ffmpeg"):
+        return candidates
+    if os.environ.get("ONTOPACK_EXTRACT_KEYFRAMES", "1").lower() in {"0", "false", "no", "off"}:
+        return candidates
+
+    root = pack_root_for_asset(path, payload.get("asset_path"))
+    if not root:
+        return candidates
+    note_id = safe_slug(str(payload.get("note_id") or Path(path).stem))
+    derived_rel_dir = Path("assets") / ".derived" / note_id
+    derived_abs_dir = root / derived_rel_dir
+    derived_abs_dir.mkdir(parents=True, exist_ok=True)
+
+    enriched = []
+    for index, candidate in enumerate(candidates):
+        rel_path = derived_rel_dir / f"keyframe-{index:04d}.jpg"
+        abs_out = root / rel_path
+        proc = run(
+            [
+                "ffmpeg",
+                "-y",
+                "-ss",
+                candidate["time"],
+                "-i",
+                path,
+                "-frames:v",
+                "1",
+                "-vf",
+                "scale='min(480,iw)':-2",
+                "-q:v",
+                "3",
+                str(abs_out),
+            ],
+            timeout=int(os.environ.get("FFMPEG_TIMEOUT", "180")),
+        )
+        if proc.returncode == 0 and abs_out.is_file():
+            enriched.append(
+                {
+                    "time": candidate["time"],
+                    "text": f"Representative video frame extracted at {candidate['time']}.",
+                    "asset": rel_path.as_posix(),
+                }
+            )
+        else:
+            enriched.append(candidate)
+    return enriched
+
+
 def selected_whisper_model() -> Optional[str]:
     return os.environ.get("WHISPER_MODEL") or os.environ.get("WHISPER_CPP_MODEL")
 
@@ -218,7 +289,7 @@ def main() -> None:
             summary = f"Local media metadata from ffprobe: {ffprobe_summary(metadata)}"
             caption = f"Local {note_type} asset inspected with ffprobe."
             tags.append("ffprobe")
-            keyframes = keyframe_candidates(metadata)
+            keyframes = extract_keyframe_assets(asset, payload, keyframe_candidates(metadata))
             transcript = whisper_transcript(asset, metadata)
             if transcript:
                 tags.append("whisper-cpp")

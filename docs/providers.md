@@ -37,7 +37,7 @@ ONTOPACK_PROVIDER_MODE=local \
 Behavior by media type:
 
 - image: Ollama vision caption when `ollama` is installed; Tesseract OCR when `tesseract` is installed.
-- video/audio: ffprobe metadata through `ffmpeg`; video keyframe timestamp candidates are emitted into `keyframes`; optional whisper.cpp transcription runs when `WHISPER_MODEL` points at an installed ggml model.
+- video/audio: ffprobe metadata through `ffmpeg`; video keyframes are extracted into `assets/.derived/<note-id>/keyframe-####.jpg` when ffmpeg can decode the file, and their paths are emitted in `keyframes[].asset`; optional whisper.cpp transcription runs when `WHISPER_MODEL` points at an installed ggml model.
 
 Verified Mac baseline on the current development machine:
 
@@ -94,7 +94,7 @@ Recommended entrypoint. Routes to API first when `OPENAI_API_KEY` is set, otherw
 
 ### `scripts/providers/local_media_worker.py`
 
-Local-only worker for macOS-first setup. Uses Ollama/Tesseract/ffprobe/whisper.cpp when available and never calls a cloud API. Images can get captions/OCR; videos/audio get metadata, video keyframe timestamp candidates, and optional transcript text when `WHISPER_MODEL` is configured.
+Local-only worker for macOS-first setup. Uses Ollama/Tesseract/ffprobe/ffmpeg/whisper.cpp when available and never calls a cloud API. Images can get captions/OCR; videos/audio get metadata, derived keyframe JPEGs under `assets/.derived/`, and optional transcript text when `WHISPER_MODEL` is configured.
 
 ### `scripts/providers/fixture_media_worker.py`
 
@@ -144,7 +144,11 @@ Typical fields passed to the worker:
   "caption": "A whiteboard showing an ontology graph.",
   "tags": ["whiteboard", "ontology", "graph"],
   "ocr": "visible text if any",
+  "transcript": "[00:00:00] spoken words if any",
   "summary": "Short search-oriented summary.",
+  "keyframes": [
+    { "time": "00:00:01", "text": "slide title", "asset": "assets/.derived/demo/keyframe-0000.jpg" }
+  ],
   "provider": "my-worker",
   "model": "my-model"
 }
