@@ -16,13 +16,13 @@ Commands checked on the development Mac:
 
 - Ollama vision docs confirm vision models accept image+text prompts for description/classification/Q&A.
 - Ollama Gemma 4 library page lists Gemma 4 as multimodal and includes `gemma4:e4b` with text/image/audio support and on-device/edge positioning.
-- OpenAI model docs list GPT-5-class models as current and GPT-5 mini as a cost-efficient model.
-- OpenAI GPT-5 mini page lists image input support and Responses API support.
+- API model default follows the current project decision: use `gpt-5.4-mini` for the OpenAI worker, with `OPENAI_MODEL` override for account-specific model availability.
 
 ## Decision
 
 - Local default model: `gemma4:e4b`.
-- API default model: `gpt-5-mini`.
+- API default model: `gpt-5.4-mini`.
+- Gemini 3.5 Flash remains a future parallel API-provider candidate, not an OpenAI worker model name.
 - Keep all defaults overrideable via `OLLAMA_MODEL` and `OPENAI_MODEL`.
 - Keep provider selection API-first when `OPENAI_API_KEY` exists, then local fallback when absent.
 

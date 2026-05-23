@@ -48,7 +48,6 @@ Reference docs checked for the default choices:
 - Ollama Vision docs: <https://docs.ollama.com/capabilities/vision>
 - Ollama Gemma 4 library page: <https://ollama.com/library/gemma4>
 - OpenAI model list: <https://platform.openai.com/docs/models>
-- OpenAI GPT-5 mini model page: <https://platform.openai.com/docs/models/gpt-5-mini>
 
 ## API priority option
 
@@ -56,11 +55,13 @@ When `OPENAI_API_KEY` is present and mode is `auto`, the router uses the API wor
 
 ```bash
 export OPENAI_API_KEY=...
-export OPENAI_MODEL=gpt-5-mini
+export OPENAI_MODEL=gpt-5.4-mini
 pack enrich-pending --provider-command /path/to/ontopack/scripts/providers/auto_media_worker.py --limit 1
 ```
 
-`gpt-5-mini` is the default API model because the image-caption/OCR patch task is well-defined and benefits from a cost-optimized vision-capable Responses model. For maximum quality, set `OPENAI_MODEL` to a stronger current Responses vision model without changing OntoPack storage.
+`gpt-5.4-mini` is the user-selected default API model for the image-caption/OCR patch task. If the deployed OpenAI account/model list changes, set `OPENAI_MODEL` to any available vision-capable Responses model without changing OntoPack storage.
+
+Gemini 3.5 Flash can be added as a parallel API worker later using the same stdin/stdout provider contract; do not overload the OpenAI worker with non-OpenAI model names.
 
 Force local even when an API key exists:
 
@@ -106,7 +107,7 @@ Image caption/OCR/summary provider using the OpenAI Responses API with base64 im
 
 ```bash
 export OPENAI_API_KEY=...
-export OPENAI_MODEL=gpt-5-mini   # optional override
+export OPENAI_MODEL=gpt-5.4-mini   # optional override
 pack enrich-pending --provider-command /path/to/ontopack/scripts/providers/openai_vision_worker.py --limit 1
 ```
 

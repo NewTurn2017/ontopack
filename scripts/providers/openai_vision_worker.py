@@ -4,7 +4,7 @@
 Requires:
   OPENAI_API_KEY=...
 Optional:
-  OPENAI_MODEL=gpt-5-mini   # override with any vision-capable Responses model
+  OPENAI_MODEL=gpt-5.4-mini   # override with any vision-capable Responses model
 
 stdin:  OntoPack provider payload JSON
 stdout: EnrichmentPatch JSON
@@ -19,7 +19,7 @@ import urllib.error
 import urllib.request
 
 API_URL = "https://api.openai.com/v1/responses"
-DEFAULT_OPENAI_MODEL = "gpt-5-mini"
+DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
 
 
 def fail(message: str, code: int = 2) -> None:

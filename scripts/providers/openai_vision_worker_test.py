@@ -18,7 +18,7 @@ def load_worker():
 
 def test_default_api_model_is_current_cost_optimized_vision_model():
     worker = load_worker()
-    assert worker.DEFAULT_OPENAI_MODEL == "gpt-5-mini"
+    assert worker.DEFAULT_OPENAI_MODEL == "gpt-5.4-mini"
 
 
 def test_empty_openai_model_env_falls_back_to_default(monkeypatch=None):
@@ -27,7 +27,7 @@ def test_empty_openai_model_env_falls_back_to_default(monkeypatch=None):
     try:
         os.environ["OPENAI_MODEL"] = ""
         selected = os.environ.get("OPENAI_MODEL") or worker.DEFAULT_OPENAI_MODEL
-        assert selected == "gpt-5-mini"
+        assert selected == "gpt-5.4-mini"
     finally:
         if original is None:
             os.environ.pop("OPENAI_MODEL", None)
