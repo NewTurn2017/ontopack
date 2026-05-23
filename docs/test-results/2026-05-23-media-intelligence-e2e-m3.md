@@ -17,12 +17,15 @@ Goal: lock the real local media intelligence path with a replayable script, not 
 9. Verifies `/api/notes/source-media-intel` exposes `keyframes[].asset_url`.
 10. Verifies `/api/gallery` includes keyframes for the video card.
 11. Optionally verifies real whisper transcription when `RUN_REAL_WHISPER=1` and `WHISPER_MODEL` or `WHISPER_CPP_MODEL` is set.
+12. In the real Whisper path, generates a second mp4 using a real speech sample, verifies the `## Transcript` block contains `country`, and verifies keyword search can retrieve the transcript text.
 
 ## Validation
 
+- `WHISPER_MODEL="$HOME/.cache/ontopack/whisper/ggml-tiny.en.bin" RUN_REAL_WHISPER=1 scripts/media-intelligence-test.sh`
 - `scripts/media-intelligence-test.sh`
 
 ## Known gaps
 
-- Default path skips Whisper model runtime because no project-wide ggml model path is selected.
+- Default path still skips Whisper model runtime so normal CI/developer smoke does not download or require a ggml model.
+- Windows Whisper model setup is not validated yet.
 - The keyframe asset route is smoke-checked for non-empty output; binary response bytes are not decoded by the shell test.

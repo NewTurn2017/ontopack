@@ -8,6 +8,8 @@ WHISPER_PACK_DIR="$PACK_DIR-whisper"
 KEEP_MEDIA_TEST_PACK="${KEEP_MEDIA_TEST_PACK:-0}"
 RUN_REAL_WHISPER="${RUN_REAL_WHISPER:-0}"
 PACK_BIN="${PACK_BIN:-$ROOT/target/debug/pack}"
+DEFAULT_WHISPER_TEST_AUDIO="/opt/homebrew/opt/whisper-cpp/share/whisper-cpp/jfk.wav"
+WHISPER_TEST_AUDIO="${WHISPER_TEST_AUDIO:-$DEFAULT_WHISPER_TEST_AUDIO}"
 
 cleanup() {
   if [[ "$KEEP_MEDIA_TEST_PACK" != "1" ]]; then
@@ -100,15 +102,28 @@ if [[ "$RUN_REAL_WHISPER" == "1" ]]; then
     echo "RUN_REAL_WHISPER=1 requires WHISPER_MODEL or WHISPER_CPP_MODEL" >&2
     exit 2
   fi
+  if [[ ! -f "$WHISPER_TEST_AUDIO" ]]; then
+    echo "RUN_REAL_WHISPER=1 requires speech audio at WHISPER_TEST_AUDIO=$WHISPER_TEST_AUDIO" >&2
+    echo "Install Homebrew whisper-cpp for the default jfk.wav sample or set WHISPER_TEST_AUDIO=/path/to/speech.wav" >&2
+    exit 2
+  fi
   "$PACK_BIN" init "$WHISPER_PACK_DIR" >/dev/null
-  cp "$SOURCE_MP4" "$WHISPER_PACK_DIR/source-media-intel.mp4"
+  WHISPER_SOURCE_MP4="$WHISPER_PACK_DIR/source-media-intel.mp4"
+  ffmpeg -y \
+    -f lavfi -i testsrc2=size=160x90:rate=1:duration=11 \
+    -i "$WHISPER_TEST_AUDIO" \
+    -shortest -pix_fmt yuv420p \
+    "$WHISPER_SOURCE_MP4" >/tmp/ontopack-media-ffmpeg-whisper-generate.out 2>&1
   (cd "$WHISPER_PACK_DIR" && "$PACK_BIN" add "$WHISPER_PACK_DIR/source-media-intel.mp4" --type video >/dev/null)
   (cd "$WHISPER_PACK_DIR" && "$PACK_BIN" build --no-embed >/dev/null)
   (cd "$WHISPER_PACK_DIR" && \
-    ONTOPACK_PROVIDER_MODE=local OPENAI_API_KEY="" "$PACK_BIN" enrich-pending --provider-command "$ROOT/scripts/providers/auto_media_worker.py" --limit 1 \
+    ONTOPACK_PROVIDER_MODE=local OPENAI_API_KEY="" WHISPER_LANG="${WHISPER_LANG:-en}" "$PACK_BIN" enrich-pending --provider-command "$ROOT/scripts/providers/auto_media_worker.py" --limit 1 \
     >/tmp/ontopack-media-whisper.out)
   grep -q 'processed=1' /tmp/ontopack-media-whisper.out
   grep -q '## Transcript' "$WHISPER_PACK_DIR/notes/source-media-intel.md"
+  grep -qi 'country' "$WHISPER_PACK_DIR/notes/source-media-intel.md"
+  (cd "$WHISPER_PACK_DIR" && "$PACK_BIN" search "country" --mode keyword -k 3 >/tmp/ontopack-media-whisper-search.out)
+  grep -q 'source-media-intel#' /tmp/ontopack-media-whisper-search.out
 else
   echo "skip real whisper runtime; set RUN_REAL_WHISPER=1 and WHISPER_MODEL=/path/to/ggml-model.bin"
 fi

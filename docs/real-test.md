@@ -70,10 +70,18 @@ Ontopack media intelligence test passed: real mp4 + local provider + derived key
 Whisper 실제 전사까지 검증하려면 ggml 모델 경로를 지정해서 opt-in 실행합니다.
 
 ```bash
-RUN_REAL_WHISPER=1 WHISPER_MODEL=/path/to/ggml-model.bin scripts/media-intelligence-test.sh
+RUN_REAL_WHISPER=1 \
+WHISPER_MODEL="$HOME/.cache/ontopack/whisper/ggml-tiny.en.bin" \
+scripts/media-intelligence-test.sh
 ```
 
-기본 경로는 ffmpeg 기반 mp4 생성/keyframe 추출만 수행하고, Whisper 모델 다운로드/경로에는 의존하지 않습니다.
+검증된 Mac 기본 조합:
+
+- runtime: Homebrew `whisper-cpp`의 `whisper-cli`
+- model: `$HOME/.cache/ontopack/whisper/ggml-tiny.en.bin` (repo에는 커밋하지 않음)
+- speech sample: `/opt/homebrew/opt/whisper-cpp/share/whisper-cpp/jfk.wav`
+
+`WHISPER_TEST_AUDIO=/path/to/speech.wav`로 전사 테스트용 음성 샘플을 바꿀 수 있습니다. 기본 경로는 ffmpeg 기반 mp4 생성/keyframe 추출만 수행하고, Whisper 모델 다운로드/경로에는 의존하지 않습니다.
 
 ## 실제 임베딩 선택 테스트
 
