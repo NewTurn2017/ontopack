@@ -757,14 +757,20 @@ fn import_bundle_archive(
         let mut archive = tar::Archive::new(decoder);
         for entry in archive.entries()? {
             let mut entry = entry?;
-            entry.unpack_in(&temp)?;
+            let entry_path = entry.path()?.into_owned();
+            if !entry.unpack_in(&temp)? {
+                anyhow::bail!("unsafe archive entry path: {}", entry_path.display());
+            }
         }
         import_bundle_context(root, &temp, None, overwrite)
     })();
     let cleanup = std::fs::remove_dir_all(&temp);
     match (result, cleanup) {
         (Ok(report), Ok(())) => Ok(report),
-        (Ok(_), Err(err)) => Err(anyhow::anyhow!("archive import cleanup failed: {err}")),
+        (Ok(report), Err(err)) => {
+            eprintln!("warning: archive import cleanup failed: {err}");
+            Ok(report)
+        }
         (Err(err), _) => Err(err),
     }
 }
