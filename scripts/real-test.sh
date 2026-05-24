@@ -230,6 +230,11 @@ grep -q '#compdef pack' /tmp/ontopack-real-completions.zsh
 grep -q 'doctor' /tmp/ontopack-real-completions.zsh
 "$PACK_BIN" completions bash >/tmp/ontopack-real-completions.bash
 grep -q 'complete -F _pack_completions pack' /tmp/ontopack-real-completions.bash
+rm -rf /tmp/ontopack-real-install
+"$ROOT/scripts/install.sh" --prefix /tmp/ontopack-real-install --bin "$PACK_BIN" --no-build --completion-shell zsh >/tmp/ontopack-real-install.out
+grep -q 'installed pack:' /tmp/ontopack-real-install.out
+test -x /tmp/ontopack-real-install/bin/pack
+grep -q '#compdef pack' /tmp/ontopack-real-install/share/zsh/site-functions/_pack
 (cd "$PACK_DIR" && ONTOPACK_LOCAL_WORKER="$ROOT/scripts/providers/fixture_media_worker.py" OPENAI_API_KEY="" "$PACK_BIN" enrich-pending --provider-command "$ROOT/scripts/providers/auto_media_worker.py" --limit 1 >/tmp/ontopack-real-enrich-pending.out)
 grep -q 'processed=1' /tmp/ontopack-real-enrich-pending.out
 grep -q 'indexed=' /tmp/ontopack-real-enrich-pending.out
