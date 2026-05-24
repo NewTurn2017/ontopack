@@ -909,6 +909,274 @@ fn bundle_directory_imports_as_one_portable_artifact() {
         .stdout(predicate::str::contains("clip#0000"));
 }
 
+#[test]
+fn bundle_import_validates_manifest_and_context_before_restore() {
+    let dir = tempdir().unwrap();
+    let source = dir.path().join("source");
+    let restored = dir.path().join("restored");
+    let bundle = dir.path().join("bundle");
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", source.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::write(source.join("notes/a.md"), "---\ntitle: A\n---\nportable").unwrap();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&source)
+        .args(["bundle", bundle.to_str().unwrap()])
+        .assert()
+        .success();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", restored.to_str().unwrap()])
+        .assert()
+        .success();
+
+    std::fs::remove_file(bundle.join("bundle.json")).unwrap();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&restored)
+        .args(["import", bundle.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("bundle manifest missing"));
+
+    std::fs::write(
+        bundle.join("bundle.json"),
+        r#"{"type":"ontopack.bundle","version":1,"context":"context.jsonl","assets":"assets","notes":1,"assets_copied":0}"#,
+    )
+    .unwrap();
+    std::fs::remove_file(bundle.join("context.jsonl")).unwrap();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&restored)
+        .args(["import", bundle.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("bundle context missing"));
+}
+
+#[test]
+fn bundle_import_fails_when_referenced_asset_is_missing() {
+    let dir = tempdir().unwrap();
+    let source = dir.path().join("source");
+    let restored = dir.path().join("restored");
+    let bundle = dir.path().join("bundle");
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", source.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::write(source.join("assets/clip.mp4"), b"mp4 bytes").unwrap();
+    std::fs::write(
+        source.join("notes/clip.md"),
+        "---\ntype: video\ntitle: Clip\nasset: assets/clip.mp4\n---\nportable clip.",
+    )
+    .unwrap();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&source)
+        .args(["bundle", bundle.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::remove_file(bundle.join("assets/clip.mp4")).unwrap();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", restored.to_str().unwrap()])
+        .assert()
+        .success();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&restored)
+        .args(["import", bundle.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "import asset missing: assets/clip.mp4",
+        ));
+
+    assert!(!restored.join("notes/clip.md").exists());
+}
+
+#[test]
+fn bundle_import_rejects_manifest_count_mismatches() {
+    let dir = tempdir().unwrap();
+    let source = dir.path().join("source");
+    let restored = dir.path().join("restored");
+    let bundle = dir.path().join("bundle");
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", source.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::write(source.join("assets/clip.mp4"), b"mp4 bytes").unwrap();
+    std::fs::write(
+        source.join("notes/clip.md"),
+        "---\ntype: video\ntitle: Clip\nasset: assets/clip.mp4\n---\nportable clip.",
+    )
+    .unwrap();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&source)
+        .args(["bundle", bundle.to_str().unwrap()])
+        .assert()
+        .success();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", restored.to_str().unwrap()])
+        .assert()
+        .success();
+
+    std::fs::write(
+        bundle.join("bundle.json"),
+        r#"{"type":"ontopack.bundle","version":1,"context":"context.jsonl","markdown":"context.md","mcp_context":"mcp-context.json","assets":"assets","notes":2,"assets_copied":1}"#,
+    )
+    .unwrap();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&restored)
+        .args(["import", bundle.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("bundle manifest notes mismatch"));
+
+    std::fs::write(
+        bundle.join("bundle.json"),
+        r#"{"type":"ontopack.bundle","version":1,"context":"context.jsonl","markdown":"context.md","mcp_context":"mcp-context.json","assets":"assets","notes":1,"assets_copied":2}"#,
+    )
+    .unwrap();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&restored)
+        .args(["import", bundle.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("bundle manifest assets mismatch"));
+}
+
+#[test]
+fn import_refuses_existing_note_or_asset_unless_overwrite_is_set() {
+    let dir = tempdir().unwrap();
+    let source = dir.path().join("source");
+    let restored = dir.path().join("restored");
+    let bundle = dir.path().join("bundle");
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", source.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::write(source.join("assets/clip.mp4"), b"new mp4 bytes").unwrap();
+    std::fs::write(
+        source.join("notes/clip.md"),
+        "---\ntype: video\ntitle: Clip\nasset: assets/clip.mp4\n---\nnew portable clip.",
+    )
+    .unwrap();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&source)
+        .args(["bundle", bundle.to_str().unwrap()])
+        .assert()
+        .success();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", restored.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::write(restored.join("notes/clip.md"), "old note").unwrap();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&restored)
+        .args(["import", bundle.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("import note already exists: clip"));
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&restored)
+        .args(["import", bundle.to_str().unwrap(), "--overwrite"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("import 완료: notes=1 assets=1"));
+    assert!(std::fs::read_to_string(restored.join("notes/clip.md"))
+        .unwrap()
+        .contains("new portable clip."));
+
+    std::fs::remove_file(restored.join("notes/clip.md")).unwrap();
+    std::fs::write(restored.join("assets/clip.mp4"), b"old bytes").unwrap();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&restored)
+        .args(["import", bundle.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "import asset already exists: assets/clip.mp4",
+        ));
+    assert!(!restored.join("notes/clip.md").exists());
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&restored)
+        .args(["import", bundle.to_str().unwrap(), "--overwrite"])
+        .assert()
+        .success();
+    assert_eq!(
+        std::fs::read(restored.join("assets/clip.mp4")).unwrap(),
+        b"new mp4 bytes"
+    );
+}
+
+#[test]
+fn import_rejects_context_and_manifest_path_traversal() {
+    let dir = tempdir().unwrap();
+    let restored = dir.path().join("restored");
+    let context = dir.path().join("context.jsonl");
+    let bundle = dir.path().join("bundle");
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", restored.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::write(
+        &context,
+        r#"{"note_id":"../evil","body":"bad","asset_path":null}"#,
+    )
+    .unwrap();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&restored)
+        .args(["import", context.to_str().unwrap(), "--format", "jsonl"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unsafe import note id"));
+
+    std::fs::create_dir_all(&bundle).unwrap();
+    std::fs::write(bundle.join("context.jsonl"), "").unwrap();
+    std::fs::write(
+        bundle.join("bundle.json"),
+        r#"{"type":"ontopack.bundle","version":1,"context":"../context.jsonl","assets":"assets","notes":0,"assets_copied":0}"#,
+    )
+    .unwrap();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&restored)
+        .args(["import", bundle.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unsafe bundle manifest path"));
+}
+
 #[cfg(unix)]
 fn make_executable(path: &std::path::Path) {
     use std::os::unix::fs::PermissionsExt;

@@ -1481,6 +1481,7 @@ dependencies = [
  "pack-core",
  "pack-server",
  "predicates",
+ "serde",
  "serde_json",
  "tempfile",
 ]

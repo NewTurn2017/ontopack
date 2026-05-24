@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use pack_core::enrichment::EnrichmentPatch;
 use pack_core::pack::{find_pack_root, AddOutcome, Pack, PackObject, PackStatus};
 use pack_core::search::{RankSource, SearchHit};
+use serde::Deserialize;
 use serde_json::json;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -663,6 +664,30 @@ struct ImportReport {
     assets: usize,
 }
 
+#[derive(Deserialize)]
+struct BundleManifest {
+    #[serde(rename = "type")]
+    bundle_type: String,
+    version: u64,
+    context: String,
+    markdown: Option<String>,
+    mcp_context: Option<String>,
+    assets: String,
+    notes: usize,
+    assets_copied: usize,
+}
+
+struct ImportPlan {
+    entries: Vec<ImportEntry>,
+    assets: std::collections::BTreeSet<String>,
+}
+
+struct ImportEntry {
+    note_id: String,
+    body: String,
+    frontmatter: serde_json::Map<String, serde_json::Value>,
+}
+
 fn import_pack_context(
     root: &Path,
     input: &Path,
@@ -673,14 +698,98 @@ fn import_pack_context(
     match format {
         ImportFormatArg::Jsonl => {
             if input.is_dir() {
-                let context = input.join("context.jsonl");
-                let asset_root = asset_root.unwrap_or(input);
-                import_jsonl_context(root, &context, Some(asset_root), overwrite)
+                import_bundle_context(root, input, asset_root, overwrite)
             } else {
                 import_jsonl_context(root, input, asset_root, overwrite)
             }
         }
     }
+}
+
+fn import_bundle_context(
+    root: &Path,
+    bundle: &Path,
+    asset_root_override: Option<&Path>,
+    overwrite: bool,
+) -> Result<ImportReport> {
+    let manifest = read_bundle_manifest(bundle)?;
+    let context_rel = ensure_safe_bundle_path(&manifest.context, "context")?;
+    let assets_rel = ensure_safe_bundle_path(&manifest.assets, "assets")?;
+
+    let context = bundle.join(&context_rel);
+    if !context.is_file() {
+        anyhow::bail!("bundle context missing: {}", context_rel.display());
+    }
+    if manifest.assets_copied > 0 && !bundle.join(&assets_rel).is_dir() {
+        anyhow::bail!("bundle assets missing: {}", assets_rel.display());
+    }
+    if let Some(markdown) = &manifest.markdown {
+        let markdown_rel = ensure_safe_bundle_path(markdown, "markdown")?;
+        if !bundle.join(&markdown_rel).is_file() {
+            anyhow::bail!("bundle markdown missing: {}", markdown_rel.display());
+        }
+    }
+    if let Some(mcp_context) = &manifest.mcp_context {
+        let mcp_context_rel = ensure_safe_bundle_path(mcp_context, "mcp_context")?;
+        if !bundle.join(&mcp_context_rel).is_file() {
+            anyhow::bail!("bundle mcp_context missing: {}", mcp_context_rel.display());
+        }
+    }
+
+    let plan = plan_jsonl_import(&context)?;
+    if plan.entries.len() != manifest.notes {
+        anyhow::bail!(
+            "bundle manifest notes mismatch: expected {} actual {}",
+            manifest.notes,
+            plan.entries.len()
+        );
+    }
+    if plan.assets.len() != manifest.assets_copied {
+        anyhow::bail!(
+            "bundle manifest assets mismatch: expected {} actual {}",
+            manifest.assets_copied,
+            plan.assets.len()
+        );
+    }
+
+    let default_asset_root = bundle.to_path_buf();
+    let asset_root = asset_root_override.unwrap_or(default_asset_root.as_path());
+    execute_import_plan(root, plan, Some(asset_root), overwrite)
+}
+
+fn read_bundle_manifest(bundle: &Path) -> Result<BundleManifest> {
+    let manifest_path = bundle.join("bundle.json");
+    if !manifest_path.is_file() {
+        anyhow::bail!("bundle manifest missing: {}", manifest_path.display());
+    }
+    let raw = std::fs::read_to_string(&manifest_path)
+        .map_err(|err| anyhow::anyhow!("bundle manifest unreadable: {err}"))?;
+    let manifest: BundleManifest = serde_json::from_str(&raw)
+        .map_err(|err| anyhow::anyhow!("bundle manifest invalid: {err}"))?;
+    if manifest.bundle_type != "ontopack.bundle" {
+        anyhow::bail!("bundle manifest invalid type: {}", manifest.bundle_type);
+    }
+    if manifest.version != 1 {
+        anyhow::bail!("bundle manifest unsupported version: {}", manifest.version);
+    }
+    Ok(manifest)
+}
+
+fn ensure_safe_bundle_path(path: &str, field: &str) -> Result<PathBuf> {
+    if path.is_empty() {
+        anyhow::bail!("unsafe bundle manifest path for {field}: empty");
+    }
+    let candidate = Path::new(path);
+    if candidate.is_absolute() {
+        anyhow::bail!("unsafe bundle manifest path for {field}: {path}");
+    }
+    for component in candidate.components() {
+        match component {
+            std::path::Component::Normal(_) => {}
+            _ => anyhow::bail!("unsafe bundle manifest path for {field}: {path}"),
+        }
+    }
+    Ok(candidate.to_path_buf())
 }
 
 fn import_jsonl_context(
@@ -689,8 +798,13 @@ fn import_jsonl_context(
     asset_root: Option<&Path>,
     overwrite: bool,
 ) -> Result<ImportReport> {
+    let plan = plan_jsonl_import(input)?;
+    execute_import_plan(root, plan, asset_root, overwrite)
+}
+
+fn plan_jsonl_import(input: &Path) -> Result<ImportPlan> {
     let raw = std::fs::read_to_string(input)?;
-    let mut notes = 0usize;
+    let mut entries = Vec::new();
     let mut assets = std::collections::BTreeSet::new();
     for (idx, line) in raw.lines().enumerate() {
         let line = line.trim();
@@ -701,10 +815,6 @@ fn import_jsonl_context(
             .map_err(|err| anyhow::anyhow!("invalid jsonl line {}: {err}", idx + 1))?;
         let note_id = json_string(&value, "note_id")?;
         ensure_safe_note_id(&note_id)?;
-        let note_path = root.join("notes").join(format!("{note_id}.md"));
-        if note_path.exists() && !overwrite {
-            anyhow::bail!("import note already exists: {note_id}");
-        }
         let body = json_string(&value, "body")?;
         let asset_path = json_optional_string(&value, "asset_path")?;
         if let Some(asset) = &asset_path {
@@ -738,21 +848,31 @@ fn import_jsonl_context(
             frontmatter.insert("related".to_string(), json!(related));
         }
 
-        if let Some(parent) = note_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let note = format!(
-            "---\n{}\n---\n{}",
-            serde_json::to_string(&frontmatter)?,
-            body
-        );
-        std::fs::write(note_path, note)?;
-        notes += 1;
+        entries.push(ImportEntry {
+            note_id,
+            body,
+            frontmatter,
+        });
     }
 
-    let mut copied_assets = 0usize;
+    Ok(ImportPlan { entries, assets })
+}
+
+fn execute_import_plan(
+    root: &Path,
+    plan: ImportPlan,
+    asset_root: Option<&Path>,
+    overwrite: bool,
+) -> Result<ImportReport> {
+    for entry in &plan.entries {
+        let note_path = root.join("notes").join(format!("{}.md", entry.note_id));
+        if note_path.exists() && !overwrite {
+            anyhow::bail!("import note already exists: {}", entry.note_id);
+        }
+    }
+
     if let Some(asset_root) = asset_root {
-        for asset in &assets {
+        for asset in &plan.assets {
             let source = asset_root.join(asset);
             if !source.is_file() {
                 anyhow::bail!("import asset missing: {asset}");
@@ -761,6 +881,27 @@ fn import_jsonl_context(
             if target.exists() && !overwrite {
                 anyhow::bail!("import asset already exists: {asset}");
             }
+        }
+    }
+
+    for entry in &plan.entries {
+        let note_path = root.join("notes").join(format!("{}.md", entry.note_id));
+        if let Some(parent) = note_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let note = format!(
+            "---\n{}\n---\n{}",
+            serde_json::to_string(&entry.frontmatter)?,
+            entry.body
+        );
+        std::fs::write(note_path, note)?;
+    }
+
+    let mut copied_assets = 0usize;
+    if let Some(asset_root) = asset_root {
+        for asset in &plan.assets {
+            let source = asset_root.join(asset);
+            let target = root.join(asset);
             if let Some(parent) = target.parent() {
                 std::fs::create_dir_all(parent)?;
             }
@@ -770,7 +911,7 @@ fn import_jsonl_context(
     }
 
     Ok(ImportReport {
-        notes,
+        notes: plan.entries.len(),
         assets: copied_assets,
     })
 }
