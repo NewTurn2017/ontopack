@@ -6,6 +6,7 @@ use crate::process::{infer_type, ProcessReport};
 use crate::search::{rrf_fuse, NoteHit, SearchFilters, SearchHit};
 use anyhow::{anyhow, bail, Context, Result};
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use walkdir::WalkDir;
@@ -89,6 +90,22 @@ pub struct PackStatus {
     pub done_enrichment: usize,
     pub error_enrichment: usize,
     pub objects: Vec<PackObject>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DuplicateCandidate {
+    pub note_id: String,
+    pub title: String,
+    pub note_type: String,
+    pub path: String,
+    pub asset: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DuplicateGroup {
+    pub fingerprint: String,
+    pub normalized_len: usize,
+    pub candidates: Vec<DuplicateCandidate>,
 }
 
 #[derive(Serialize)]
@@ -305,6 +322,48 @@ impl Pack {
             .into_iter()
             .filter(|object| object.enrichment_status == EnrichmentStatus::Pending)
             .collect())
+    }
+
+    pub fn duplicate_notes(&self) -> Result<Vec<DuplicateGroup>> {
+        let mut by_body: BTreeMap<String, Vec<Note>> = BTreeMap::new();
+        for note in self.scan_notes()? {
+            let normalized = normalize_duplicate_body(&note.body);
+            if normalized.is_empty() {
+                continue;
+            }
+            by_body.entry(normalized).or_default().push(note);
+        }
+
+        let mut groups = by_body
+            .into_iter()
+            .filter_map(|(normalized, mut notes)| {
+                if notes.len() < 2 {
+                    return None;
+                }
+                notes.sort_by(|a, b| a.id.cmp(&b.id));
+                Some(DuplicateGroup {
+                    fingerprint: stable_text_fingerprint(&normalized),
+                    normalized_len: normalized.len(),
+                    candidates: notes
+                        .into_iter()
+                        .map(|note| DuplicateCandidate {
+                            note_id: note.id,
+                            title: note.title,
+                            note_type: note.note_type,
+                            path: relative_display(&self.root, &note.path),
+                            asset: note.asset,
+                        })
+                        .collect(),
+                })
+            })
+            .collect::<Vec<_>>();
+        groups.sort_by(|a, b| {
+            b.candidates
+                .len()
+                .cmp(&a.candidates.len())
+                .then_with(|| a.fingerprint.cmp(&b.fingerprint))
+        });
+        Ok(groups)
     }
 
     pub fn update_enrichment(&self, note_id: &str, patch: &EnrichmentPatch) -> Result<PathBuf> {
@@ -641,6 +700,19 @@ fn object_kind(note: &Note) -> String {
             })
             .unwrap_or_else(|| "asset".to_string()),
     }
+}
+
+fn normalize_duplicate_body(body: &str) -> String {
+    body.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn stable_text_fingerprint(text: &str) -> String {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in text.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
 }
 
 fn relative_display(root: &Path, path: &Path) -> String {
@@ -1081,6 +1153,48 @@ mod tests {
         assert!(root.join("notes/pic.md").exists());
         assert!(!root.join("_inbox/memo.md").exists());
         assert!(!root.join("_inbox/pic.png").exists());
+    }
+
+    #[test]
+    fn duplicate_notes_groups_notes_with_same_normalized_body() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(
+            root.join("notes/a.md"),
+            "---\ntitle: A\n---\n같은 본문   여러   공백",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("notes/b.md"),
+            "---\ntitle: B\ntags: [copy]\n---\n같은 본문 여러 공백",
+        )
+        .unwrap();
+        std::fs::write(root.join("notes/c.md"), "다른 본문").unwrap();
+        let pack = Pack::open(&root).unwrap();
+
+        let groups = pack.duplicate_notes().unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].normalized_len, "같은 본문 여러 공백".len());
+        let ids: Vec<_> = groups[0]
+            .candidates
+            .iter()
+            .map(|candidate| candidate.note_id.as_str())
+            .collect();
+        assert_eq!(ids, vec!["a", "b"]);
+        assert_eq!(groups[0].candidates[0].path, "notes/a.md");
+    }
+
+    #[test]
+    fn duplicate_notes_ignores_blank_bodies() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(root.join("notes/a.md"), "---\ntitle: A\n---\n   ").unwrap();
+        std::fs::write(root.join("notes/b.md"), "---\ntitle: B\n---\n\n").unwrap();
+        let pack = Pack::open(&root).unwrap();
+
+        assert!(pack.duplicate_notes().unwrap().is_empty());
     }
 
     #[test]

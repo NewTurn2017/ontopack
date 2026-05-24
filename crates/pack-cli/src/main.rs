@@ -6,7 +6,7 @@ use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use pack_core::enrichment::EnrichmentPatch;
-use pack_core::pack::{find_pack_root, AddOutcome, Pack, PackObject, PackStatus};
+use pack_core::pack::{find_pack_root, AddOutcome, DuplicateGroup, Pack, PackObject, PackStatus};
 use pack_core::search::{RankSource, SearchHit};
 use serde::Deserialize;
 use serde_json::json;
@@ -50,6 +50,12 @@ enum Commands {
         /// AI enrichment가 필요한 객체만 출력한다
         #[arg(long)]
         pending_enrichment: bool,
+        /// JSON으로 출력한다
+        #[arg(long)]
+        json: bool,
+    },
+    /// 본문이 같은 중복 후보 노트 그룹을 찾는다
+    Duplicates {
         /// JSON으로 출력한다
         #[arg(long)]
         json: bool,
@@ -255,6 +261,16 @@ fn main() -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&objects)?);
             } else {
                 print_objects(&objects);
+            }
+        }
+        Commands::Duplicates { json } => {
+            let root = find_pack_root(&std::env::current_dir()?)?;
+            let pack = Pack::open(&root)?;
+            let groups = pack.duplicate_notes()?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&groups)?);
+            } else {
+                print_duplicate_groups(&groups);
             }
         }
         Commands::EnrichNote {
@@ -579,6 +595,32 @@ fn print_status(status: &PackStatus, manifest: &std::path::Path) {
         status.error_enrichment
     );
     println!("객체 manifest 갱신: {}", manifest.display());
+}
+
+fn print_duplicate_groups(groups: &[DuplicateGroup]) {
+    if groups.is_empty() {
+        println!("중복 후보 없음");
+        return;
+    }
+    println!("중복 후보: groups={}", groups.len());
+    for group in groups {
+        println!(
+            "fingerprint={} count={} normalized_len={}",
+            group.fingerprint,
+            group.candidates.len(),
+            group.normalized_len
+        );
+        for candidate in &group.candidates {
+            println!(
+                "- {} [{}] title={} path={} asset={}",
+                candidate.note_id,
+                candidate.note_type,
+                candidate.title,
+                candidate.path,
+                candidate.asset.as_deref().unwrap_or("-")
+            );
+        }
+    }
 }
 
 fn print_objects(objects: &[PackObject]) {

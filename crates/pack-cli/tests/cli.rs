@@ -432,6 +432,39 @@ fn open_no_browser_prints_viewer_url() {
 }
 
 #[test]
+fn duplicates_reports_matching_note_bodies() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("p");
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", root.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::write(root.join("notes/a.md"), "---\ntitle: A\n---\n중복 본문").unwrap();
+    std::fs::write(root.join("notes/b.md"), "---\ntitle: B\n---\n중복   본문").unwrap();
+    std::fs::write(root.join("notes/c.md"), "다른 본문").unwrap();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["duplicates"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("중복 후보: groups=1"))
+        .stdout(predicate::str::contains("- a [note]"))
+        .stdout(predicate::str::contains("- b [note]"));
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["duplicates", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#""note_id": "a""#))
+        .stdout(predicate::str::contains(r#""note_id": "b""#));
+}
+
+#[test]
 fn status_and_list_report_pending_enrichment() {
     let dir = tempdir().unwrap();
     let root = dir.path().join("p");

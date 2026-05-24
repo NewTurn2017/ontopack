@@ -110,6 +110,23 @@ created: 2026-05-22
 공통질문 최종 답변은 이 프롬프트 카드에서 찾아야 한다.
 NOTE
 
+cat > "$PACK_DIR/notes/duplicate-a.md" <<'NOTE'
+---
+type: note
+title: 중복 후보 A
+tags: [ops]
+---
+반복되는 운영 메모 본문이다.
+NOTE
+cat > "$PACK_DIR/notes/duplicate-b.md" <<'NOTE'
+---
+type: note
+title: 중복 후보 B
+tags: [ops]
+---
+반복되는   운영 메모 본문이다.
+NOTE
+
 printf '\x89PNG\r\n' > "$PACK_DIR/evidence.png"
 (cd "$PACK_DIR" && "$PACK_BIN" add "$PACK_DIR/evidence.png" --type image >/tmp/ontopack-real-add-image.out)
 cat > "$PACK_DIR/notes/evidence-image.md" <<'NOTE'
@@ -182,6 +199,10 @@ CLI_ENRICHED="$(cd "$PACK_DIR" && "$PACK_BIN" search "cockpit" --mode keyword -k
 printf '%s\n' "$CLI_ENRICHED" | grep -q 'demo-video#0000'
 CLI_WORKER="$(cd "$PACK_DIR" && "$PACK_BIN" search "fixture-provider" --mode keyword -k 3)"
 printf '%s\n' "$CLI_WORKER" | grep -q '#0000'
+(cd "$PACK_DIR" && "$PACK_BIN" duplicates >/tmp/ontopack-real-duplicates.out)
+grep -q '중복 후보: groups=1' /tmp/ontopack-real-duplicates.out
+grep -q 'duplicate-a' /tmp/ontopack-real-duplicates.out
+grep -q 'duplicate-b' /tmp/ontopack-real-duplicates.out
 
 echo "[5/11] portable context exports"
 (cd "$PACK_DIR" && "$PACK_BIN" export --format jsonl >/tmp/ontopack-real-export.jsonl)

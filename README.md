@@ -58,5 +58,8 @@
 - 자동화 smoke: `pack serve --port 0 --once --request $'GET /api/search?q=hello HTTP/1.1\r\nHost: localhost\r\n\r\n'`
 - 자세한 사용법은 `docs/viewer.md` 참고
 
-## 다음 (M5~)
-멀티모달 intake, 지식 유지보수 도구, 배포/제품화.
+## M6
+- `pack duplicates [--json]` — source-of-truth note body를 정규화해 같은 본문을 가진 중복 후보 그룹을 리포트
+
+## 다음
+CLIP/실제 STT 같은 provider-heavy 멀티모달 확장, orphan/gap/topic-map 지식 유지보수, watcher/installer/Windows 검증.
