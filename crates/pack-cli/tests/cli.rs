@@ -917,6 +917,78 @@ fn bundle_directory_imports_as_one_portable_artifact() {
 }
 
 #[test]
+fn bundle_archive_imports_with_same_manifest_contract() {
+    let dir = tempdir().unwrap();
+    let source = dir.path().join("source");
+    let restored = dir.path().join("restored");
+    let bundle = dir.path().join("bundle");
+    let archive = dir.path().join("bundle.tar.gz");
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", source.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::write(source.join("assets/clip.mp4"), b"archive mp4 bytes").unwrap();
+    std::fs::write(
+        source.join("notes/clip.md"),
+        "---\ntype: video\ntitle: Clip\nasset: assets/clip.mp4\ntags: [archive]\n---\n압축 번들 복원 가능한 영상 노트.",
+    )
+    .unwrap();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&source)
+        .args([
+            "bundle",
+            bundle.to_str().unwrap(),
+            "--archive",
+            archive.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("archive 완료"))
+        .stdout(predicate::str::contains("bundle 완료"));
+
+    assert!(bundle.join("bundle.json").exists());
+    assert!(archive.exists());
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", restored.to_str().unwrap()])
+        .assert()
+        .success();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&restored)
+        .args(["import", archive.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("import 완료: notes=1 assets=1"));
+
+    assert_eq!(
+        std::fs::read(restored.join("assets/clip.mp4")).unwrap(),
+        b"archive mp4 bytes"
+    );
+    assert!(std::fs::read_to_string(restored.join("notes/clip.md"))
+        .unwrap()
+        .contains("\ntype: video\n"));
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&restored)
+        .args(["build", "--no-embed"])
+        .assert()
+        .success();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&restored)
+        .args(["search", "압축"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("clip#0000"));
+}
+
+#[test]
 fn bundle_import_validates_manifest_and_context_before_restore() {
     let dir = tempdir().unwrap();
     let source = dir.path().join("source");

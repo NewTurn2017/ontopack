@@ -2,11 +2,15 @@
 use anyhow::bail;
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
+use flate2::read::GzDecoder;
+use flate2::write::GzEncoder;
+use flate2::Compression;
 use pack_core::enrichment::EnrichmentPatch;
 use pack_core::pack::{find_pack_root, AddOutcome, Pack, PackObject, PackStatus};
 use pack_core::search::{RankSource, SearchHit};
 use serde::Deserialize;
 use serde_json::json;
+use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, Stdio};
@@ -141,6 +145,9 @@ enum Commands {
     Bundle {
         /// bundle 출력 디렉터리
         output: PathBuf,
+        /// bundle 디렉터리 레이아웃을 gzip-compressed tar archive로도 저장한다
+        #[arg(long)]
+        archive: Option<PathBuf>,
     },
     /// 로컬 HTTP 뷰어/API 서버를 시작한다
     Serve {
@@ -380,10 +387,14 @@ fn main() -> Result<()> {
                 report.notes, report.assets
             );
         }
-        Commands::Bundle { output } => {
+        Commands::Bundle { output, archive } => {
             let root = find_pack_root(&std::env::current_dir()?)?;
             let pack = Pack::open(&root)?;
             let report = bundle_pack(&pack, &output)?;
+            if let Some(archive) = archive {
+                write_bundle_archive(&output, &archive)?;
+                println!("archive 완료: {}", archive.display());
+            }
             println!(
                 "bundle 완료: notes={} assets={} dir={}",
                 report.notes,
@@ -699,11 +710,70 @@ fn import_pack_context(
         ImportFormatArg::Jsonl => {
             if input.is_dir() {
                 import_bundle_context(root, input, asset_root, overwrite)
+            } else if is_bundle_archive(input) {
+                if asset_root.is_some() {
+                    anyhow::bail!("archive import does not support --asset-root");
+                }
+                import_bundle_archive(root, input, overwrite)
             } else {
                 import_jsonl_context(root, input, asset_root, overwrite)
             }
         }
     }
+}
+
+fn write_bundle_archive(bundle_dir: &Path, archive_path: &Path) -> Result<()> {
+    if let Some(parent) = archive_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(parent)?;
+    }
+    let file = File::create(archive_path)?;
+    let encoder = GzEncoder::new(file, Compression::default());
+    let mut builder = tar::Builder::new(encoder);
+    builder.append_dir_all(".", bundle_dir)?;
+    let encoder = builder.into_inner()?;
+    encoder.finish()?;
+    Ok(())
+}
+
+fn import_bundle_archive(
+    root: &Path,
+    archive_path: &Path,
+    overwrite: bool,
+) -> Result<ImportReport> {
+    let temp = std::env::temp_dir().join(format!(
+        "ontopack-bundle-import-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&temp)?;
+    let result = (|| -> Result<ImportReport> {
+        let file = File::open(archive_path)?;
+        let decoder = GzDecoder::new(file);
+        let mut archive = tar::Archive::new(decoder);
+        for entry in archive.entries()? {
+            let mut entry = entry?;
+            entry.unpack_in(&temp)?;
+        }
+        import_bundle_context(root, &temp, None, overwrite)
+    })();
+    let cleanup = std::fs::remove_dir_all(&temp);
+    match (result, cleanup) {
+        (Ok(report), Ok(())) => Ok(report),
+        (Ok(_), Err(err)) => Err(anyhow::anyhow!("archive import cleanup failed: {err}")),
+        (Err(err), _) => Err(err),
+    }
+}
+
+fn is_bundle_archive(input: &Path) -> bool {
+    let Some(name) = input.file_name().and_then(|value| value.to_str()) else {
+        return false;
+    };
+    name.ends_with(".tar.gz") || name.ends_with(".tgz")
 }
 
 fn import_bundle_context(
