@@ -242,7 +242,7 @@ impl Index {
         Ok(out)
     }
 
-    pub fn rebuild_chunk_embeddings<E: crate::embed::Embedder>(
+    pub fn rebuild_chunk_embeddings<E: crate::embed::Embedder + ?Sized>(
         &mut self,
         embedder: &E,
     ) -> Result<usize> {
@@ -281,7 +281,7 @@ impl Index {
         Ok(chunks.len())
     }
 
-    pub fn search_vector_chunks<E: crate::embed::Embedder>(
+    pub fn search_vector_chunks<E: crate::embed::Embedder + ?Sized>(
         &self,
         query: &str,
         k: usize,
@@ -331,7 +331,7 @@ impl Index {
         Ok(out)
     }
 
-    pub fn search_vector_chunk_hits<E: crate::embed::Embedder>(
+    pub fn search_vector_chunk_hits<E: crate::embed::Embedder + ?Sized>(
         &self,
         query: &str,
         k: usize,

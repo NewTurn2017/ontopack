@@ -1,7 +1,8 @@
 use anyhow::{bail, Result};
+use pack_core::embed::Embedder;
 use pack_core::enrichment::{ENRICHMENT_END, ENRICHMENT_START};
 use pack_core::pack::Pack;
-use pack_core::search::{RankSource, SearchFilters as CoreSearchFilters, SearchHit};
+use pack_core::search::{RankSource, SearchFilters as CoreSearchFilters, SearchHit, SearchMode};
 use serde::Serialize;
 use std::time::Instant;
 
@@ -210,23 +211,61 @@ pub fn search_with_filters(
     query: &str,
     filters: SearchFilters<'_>,
 ) -> Result<SearchResponse> {
+    search_with_filters_and_embedder(pack, query, filters, None)
+}
+
+pub fn search_with_filters_and_embedder(
+    pack: &Pack,
+    query: &str,
+    filters: SearchFilters<'_>,
+    semantic_embedder: Option<&dyn Embedder>,
+) -> Result<SearchResponse> {
     let started = Instant::now();
-    validate_search_mode(filters.mode)?;
+    let mode = resolve_search_mode(filters.mode, semantic_embedder.is_some())?;
     let k = filters.k.clamp(1, MAX_SEARCH_K);
-    let hits = pack.search_keyword_chunks_filtered(
-        query,
-        k,
-        CoreSearchFilters {
-            note_type: filters.note_type,
-            tag: filters.tag,
-            from: filters.from,
-            to: filters.to,
-        },
-    )?;
+    let (source, hits) = match mode {
+        SearchMode::Keyword => (
+            "sqlite_fts",
+            pack.search_keyword_chunks_filtered(
+                query,
+                k,
+                CoreSearchFilters {
+                    note_type: filters.note_type,
+                    tag: filters.tag,
+                    from: filters.from,
+                    to: filters.to,
+                },
+            )?,
+        ),
+        SearchMode::Vector => {
+            let embedder = semantic_embedder.expect("semantic mode availability checked");
+            (
+                "sqlite_vec",
+                filter_semantic_hits(
+                    pack,
+                    pack.search_vector_chunk_hits_with(query, MAX_SEARCH_K, embedder)?,
+                    filters,
+                    k,
+                )?,
+            )
+        }
+        SearchMode::Hybrid => {
+            let embedder = semantic_embedder.expect("semantic mode availability checked");
+            (
+                "hybrid_rrf",
+                filter_semantic_hits(
+                    pack,
+                    pack.search_hybrid_with(query, MAX_SEARCH_K, embedder)?,
+                    filters,
+                    k,
+                )?,
+            )
+        }
+    };
     Ok(SearchResponse {
         query: query.to_string(),
-        mode: "keyword".to_string(),
-        source: "sqlite_fts".to_string(),
+        mode: search_mode_label(mode).to_string(),
+        source: source.to_string(),
         hits: hits.into_iter().map(search_card).collect(),
         elapsed_ms: elapsed_ms_since(started),
     })
@@ -381,12 +420,17 @@ pub fn dashboard(pack: &Pack, filters: DashboardFilters<'_>) -> Result<Dashboard
 }
 
 pub fn capabilities(pack: &Pack) -> CapabilitiesResponse {
-    let semantic_reason =
-        "pack-server is keyword-only in this build; use the CLI real-embed path for vector/hybrid search until server capabilities are expanded"
-            .to_string();
+    capabilities_with_semantic(pack, false)
+}
+
+pub fn capabilities_with_semantic(pack: &Pack, semantic_available: bool) -> CapabilitiesResponse {
+    let semantic_reason = (!semantic_available).then(|| {
+        "pack-server semantic search is disabled; start `pack serve --semantic` or `pack open --semantic` from a real-embed build after running `pack embed`"
+            .to_string()
+    });
     CapabilitiesResponse {
         default_search_mode: "keyword".to_string(),
-        semantic_search: false,
+        semantic_search: semantic_available,
         embedding_model: pack.config.embed_model.clone(),
         embedding_dim: pack.config.embed_dim,
         search_modes: vec![
@@ -398,15 +442,15 @@ pub fn capabilities(pack: &Pack) -> CapabilitiesResponse {
             },
             SearchModeCapability {
                 mode: "vector".to_string(),
-                available: false,
+                available: semantic_available,
                 source: "sqlite_vec".to_string(),
-                reason: Some(semantic_reason.clone()),
+                reason: semantic_reason.clone(),
             },
             SearchModeCapability {
                 mode: "hybrid".to_string(),
-                available: false,
-                source: "hybrid".to_string(),
-                reason: Some(semantic_reason),
+                available: semantic_available,
+                source: "hybrid_rrf".to_string(),
+                reason: semantic_reason,
             },
         ],
     }
@@ -546,14 +590,84 @@ fn asset_url(asset: &str) -> Option<String> {
     Some(format!("/assets/{}", percent_encode_path(relative)))
 }
 
-fn validate_search_mode(mode: Option<&str>) -> Result<()> {
+fn resolve_search_mode(mode: Option<&str>, semantic_available: bool) -> Result<SearchMode> {
     match mode.unwrap_or("keyword") {
-        "keyword" => Ok(()),
+        "keyword" => Ok(SearchMode::Keyword),
+        "vector" if semantic_available => Ok(SearchMode::Vector),
+        "hybrid" if semantic_available => Ok(SearchMode::Hybrid),
         "vector" | "hybrid" => bail!(
-            "search mode unavailable in pack-server: vector/hybrid require a future real-embed server capability; use pack search --mode vector|hybrid with a real-embed CLI build for now"
+            "search mode unavailable in pack-server: vector/hybrid require `pack serve --semantic` or `pack open --semantic` from a real-embed build after running `pack embed`"
         ),
         other => bail!("unknown search mode: {other}"),
     }
+}
+
+fn search_mode_label(mode: SearchMode) -> &'static str {
+    match mode {
+        SearchMode::Keyword => "keyword",
+        SearchMode::Vector => "vector",
+        SearchMode::Hybrid => "hybrid",
+    }
+}
+
+fn filter_semantic_hits(
+    pack: &Pack,
+    hits: Vec<SearchHit>,
+    filters: SearchFilters<'_>,
+    k: usize,
+) -> Result<Vec<SearchHit>> {
+    let mut out = Vec::new();
+    for hit in hits {
+        if semantic_hit_matches_filters(pack, &hit, filters)? {
+            out.push(hit);
+            if out.len() >= k {
+                break;
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn semantic_hit_matches_filters(
+    pack: &Pack,
+    hit: &SearchHit,
+    filters: SearchFilters<'_>,
+) -> Result<bool> {
+    if filters.note_type.is_none()
+        && filters.tag.is_none()
+        && filters.from.is_none()
+        && filters.to.is_none()
+    {
+        return Ok(true);
+    }
+    let Some(note) = pack.note_by_id_or_scan(&hit.note_id)? else {
+        return Ok(false);
+    };
+    if filters
+        .note_type
+        .is_some_and(|note_type| note.note_type != note_type)
+    {
+        return Ok(false);
+    }
+    if filters
+        .tag
+        .is_some_and(|tag| !note.tags.iter().any(|candidate| candidate == tag))
+    {
+        return Ok(false);
+    }
+    if filters
+        .from
+        .is_some_and(|from| note.created.as_deref().is_none_or(|created| created < from))
+    {
+        return Ok(false);
+    }
+    if filters
+        .to
+        .is_some_and(|to| note.created.as_deref().is_none_or(|created| created > to))
+    {
+        return Ok(false);
+    }
+    Ok(true)
 }
 
 fn elapsed_ms_since(started: Instant) -> u64 {

@@ -160,6 +160,9 @@ enum Commands {
         /// --once에서 사용할 raw HTTP 요청
         #[arg(long)]
         request: Option<String>,
+        /// real-embed 빌드에서 서버 프로세스에 임베더를 한 번 로드해 vector/hybrid 검색을 활성화한다
+        #[arg(long)]
+        semantic: bool,
     },
     /// 로컬 뷰어를 브라우저로 연다
     Open {
@@ -172,6 +175,9 @@ enum Commands {
         /// URL을 stdout에 출력한다
         #[arg(long)]
         print_url: bool,
+        /// real-embed 빌드에서 서버 프로세스에 임베더를 한 번 로드해 vector/hybrid 검색을 활성화한다
+        #[arg(long)]
+        semantic: bool,
     },
 }
 
@@ -406,27 +412,30 @@ fn main() -> Result<()> {
             port,
             once,
             request,
+            semantic,
         } => {
             let root = find_pack_root(&std::env::current_dir()?)?;
             let pack = Pack::open(&root)?;
             let listener = pack_server::http::bind_localhost(port)?;
             let url = pack_server::http::listener_url(&listener)?;
             println!("뷰어 서버: {url}");
+            let state = server_state(pack, semantic)?;
             if once {
                 if let Some(request) = request {
-                    let response = pack_server::http::handle_request(&pack, &request)?;
+                    let response = pack_server::http::handle_request_with_state(&state, &request)?;
                     println!("{}", String::from_utf8_lossy(&response.body));
                 } else {
-                    pack_server::http::serve_once(&pack, &listener)?;
+                    pack_server::http::serve_once_with_state(&state, &listener)?;
                 }
             } else {
-                pack_server::http::serve_forever(pack, listener)?;
+                pack_server::http::serve_forever_with_state(state, listener)?;
             }
         }
         Commands::Open {
             port,
             no_browser,
             print_url,
+            semantic,
         } => {
             let root = find_pack_root(&std::env::current_dir()?)?;
             let pack = Pack::open(&root)?;
@@ -438,11 +447,31 @@ fn main() -> Result<()> {
             if no_browser {
                 return Ok(());
             }
+            let state = server_state(pack, semantic)?;
             open_browser(&url)?;
-            pack_server::http::serve_forever(pack, listener)?;
+            pack_server::http::serve_forever_with_state(state, listener)?;
         }
     }
     Ok(())
+}
+
+#[cfg(feature = "real-embed")]
+fn server_state(pack: Pack, semantic: bool) -> Result<pack_server::http::ServerState> {
+    if semantic {
+        pack_server::http::ServerState::with_real_embedder(pack, true)
+    } else {
+        Ok(pack_server::http::ServerState::new(pack))
+    }
+}
+
+#[cfg(not(feature = "real-embed"))]
+fn server_state(pack: Pack, semantic: bool) -> Result<pack_server::http::ServerState> {
+    if semantic {
+        bail!(
+            "pack serve/open --semantic은 real-embed feature로 빌드해야 합니다: cargo build --release --features real-embed"
+        );
+    }
+    Ok(pack_server::http::ServerState::new(pack))
 }
 
 struct EnrichPendingReport {

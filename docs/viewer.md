@@ -10,6 +10,13 @@ pack serve --port 8787
 
 출력된 `http://127.0.0.1:8787` 주소를 브라우저에서 열면 검색, Ask 컨텍스트, 검색 모드 capability, type/tag/date 필터, 노트 상세, 관련 노트, 타임라인, 갤러리, 그래프를 볼 수 있습니다.
 
+기본 서버는 모델 다운로드 없는 keyword mode만 엽니다. 이미 `pack embed`로 청크 임베딩을 만든 팩에서 서버/뷰어 semantic 검색까지 켜려면 `real-embed` 빌드로 실행합니다. 이때 서버 프로세스가 BGE-M3 임베더를 시작 시 한 번 로드하고 `/api/capabilities`에서 `vector`/`hybrid`를 available로 보고합니다.
+
+```bash
+cargo build --release --features real-embed
+target/release/pack serve --semantic --port 8787
+```
+
 M6 compact ops UI는 검색 결과, 선택 노트, 갤러리, 타임라인, 그래프, Ask 컨텍스트를 3열 콘솔에 압축 배치합니다. 긴 카드 목록과 노트 본문은 패널 안에서만 스크롤되므로 큰 화면에서는 핵심 상태를 한눈에 유지하면서 필요한 패널만 drill-down할 수 있습니다.
 
 브라우저까지 바로 열려면:
@@ -34,7 +41,7 @@ pack serve --port 0 --once --request $'GET /api/search?q=hello HTTP/1.1\r\nHost:
 
 ### `GET /api/search?q=<query>&k=<n>&type=<type>&tag=<tag>&from=<date>&to=<date>`
 
-키워드 chunk source card를 반환합니다. type/tag/date 필터를 적용할 수 있습니다. 기본 서버는 모델 다운로드 없는 keyword 검색을 사용하며, 응답에는 개발/튜닝용 `elapsed_ms`, 실제 실행 `mode`, `source`가 포함됩니다. `mode=vector|hybrid`는 capability가 열리기 전까지 400 JSON 오류로 거절합니다.
+chunk source card를 반환합니다. type/tag/date 필터를 적용할 수 있습니다. 기본 서버는 모델 다운로드 없는 keyword 검색을 사용하며, 응답에는 개발/튜닝용 `elapsed_ms`, 실제 실행 `mode`, `source`가 포함됩니다. `pack serve --semantic` / `pack open --semantic`을 `real-embed` 빌드에서 실행하면 `mode=vector|hybrid`도 같은 API에서 활성화됩니다. capability가 닫힌 서버에서 `mode=vector|hybrid`를 요청하면 400 JSON 오류로 거절합니다.
 
 ```json
 {
@@ -74,7 +81,7 @@ LLM 답변을 서버에서 직접 생성하지 않고 citation-ready context blo
 
 ### `GET /api/capabilities`
 
-서버가 실제로 지원하는 검색 모드를 반환합니다. 현재 내장 서버는 `keyword`만 활성화하고 `vector`/`hybrid`는 잠금 상태로 노출합니다. UI는 이 응답을 기준으로 semantic 모드를 비활성화합니다.
+서버가 실제로 지원하는 검색 모드를 반환합니다. 기본 내장 서버는 `keyword`만 활성화하고 `vector`/`hybrid`는 잠금 상태로 노출합니다. `real-embed` 빌드에서 `--semantic`으로 시작한 서버는 `semantic_search: true`와 함께 `vector`/`hybrid`를 활성화합니다. UI는 이 응답을 기준으로 semantic 모드를 활성/비활성화합니다.
 
 ### `GET /api/facets`
 
@@ -153,7 +160,7 @@ LLM 답변을 서버에서 직접 생성하지 않고 citation-ready context blo
 
 ## 현재 한계
 
-- 서버 검색은 capability 기반 keyword mode입니다. vector/hybrid는 `/api/capabilities`에서 locked로 표시되며, `pack search --mode vector|hybrid`와 `real-embed` 경로에서 먼저 검증된 뒤 서버 API에 연결할 예정입니다.
+- 서버 semantic 검색은 capability 기반입니다. 기본 빌드는 keyword-only이며, vector/hybrid는 `real-embed` 빌드 + `--semantic` + 사전 `pack embed`가 필요합니다. 첫 실행은 모델 다운로드/캐시 상태에 영향을 받을 수 있습니다.
 - 뷰어는 framework-free MVP입니다. 갤러리와 선택 노트는 asset sidecar의 이미지/비디오를 실제로 표시하지만, 아직 썸네일 생성/트랜스코딩/비디오 타임라인 인덱싱은 하지 않습니다.
 - 그래프는 아직 lightweight 링크 요약입니다. 시각화 라이브러리는 API와 사용 패턴이 안정된 뒤 추가합니다.
 - `pack open`의 실제 브라우저 실행은 OS 명령(`open`, `xdg-open`, `cmd /C start`)에 의존합니다. 자동화에서는 `--no-browser --print-url`을 사용하세요.

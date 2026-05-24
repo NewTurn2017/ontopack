@@ -1,5 +1,6 @@
 use crate::{api, viewer};
 use anyhow::{anyhow, bail, Result};
+use pack_core::embed::Embedder;
 use pack_core::pack::Pack;
 use serde::Serialize;
 use serde_json::json;
@@ -7,6 +8,7 @@ use std::collections::HashMap;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Component, Path};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -14,6 +16,49 @@ pub struct HttpResponse {
     pub status: u16,
     pub content_type: &'static str,
     pub body: Vec<u8>,
+}
+
+#[derive(Clone)]
+pub struct ServerState {
+    pack: Pack,
+    semantic_embedder: Option<Arc<dyn Embedder + Send + Sync>>,
+}
+
+impl ServerState {
+    pub fn new(pack: Pack) -> Self {
+        Self {
+            pack,
+            semantic_embedder: None,
+        }
+    }
+
+    pub fn with_semantic_embedder<E>(mut self, embedder: E) -> Self
+    where
+        E: Embedder + Send + Sync + 'static,
+    {
+        self.semantic_embedder = Some(Arc::new(embedder));
+        self
+    }
+
+    #[cfg(feature = "real-embed")]
+    pub fn with_real_embedder(pack: Pack, show_download_progress: bool) -> Result<Self> {
+        let embedder = pack_core::embed::FastEmbedder::try_new(
+            &pack.config.embed_model,
+            pack.config.embed_dim,
+            show_download_progress,
+        )?;
+        Ok(Self::new(pack).with_semantic_embedder(embedder))
+    }
+
+    fn semantic_available(&self) -> bool {
+        self.semantic_embedder.is_some()
+    }
+
+    fn semantic_embedder(&self) -> Option<&dyn Embedder> {
+        self.semantic_embedder
+            .as_deref()
+            .map(|embedder| embedder as &dyn Embedder)
+    }
 }
 
 impl HttpResponse {
@@ -41,11 +86,15 @@ pub fn listener_url(listener: &TcpListener) -> Result<String> {
 }
 
 pub fn serve_forever(pack: Pack, listener: TcpListener) -> Result<()> {
+    serve_forever_with_state(ServerState::new(pack), listener)
+}
+
+pub fn serve_forever_with_state(state: ServerState, listener: TcpListener) -> Result<()> {
     for stream in listener.incoming() {
         let stream = stream?;
-        let pack = pack.clone();
+        let state = state.clone();
         std::thread::spawn(move || {
-            if let Err(err) = serve_stream(&pack, stream) {
+            if let Err(err) = serve_stream_with_state(&state, stream) {
                 eprintln!("뷰어 연결 처리 실패(계속 실행): {err}");
             }
         });
@@ -54,13 +103,17 @@ pub fn serve_forever(pack: Pack, listener: TcpListener) -> Result<()> {
 }
 
 pub fn serve_once(pack: &Pack, listener: &TcpListener) -> Result<()> {
-    let (stream, _) = listener.accept()?;
-    serve_stream(pack, stream)
+    serve_once_with_state(&ServerState::new(pack.clone()), listener)
 }
 
-fn serve_stream(pack: &Pack, mut stream: TcpStream) -> Result<()> {
+pub fn serve_once_with_state(state: &ServerState, listener: &TcpListener) -> Result<()> {
+    let (stream, _) = listener.accept()?;
+    serve_stream_with_state(state, stream)
+}
+
+fn serve_stream_with_state(state: &ServerState, mut stream: TcpStream) -> Result<()> {
     let request = read_http_request(&mut stream)?;
-    let response = handle_request(pack, &request)?.to_http_bytes();
+    let response = handle_request_with_state(state, &request)?.to_http_bytes();
     stream.write_all(&response)?;
     stream.flush()?;
     Ok(())
@@ -101,6 +154,10 @@ fn read_http_request(stream: &mut TcpStream) -> Result<String> {
 }
 
 pub fn handle_request(pack: &Pack, raw_request: &str) -> Result<HttpResponse> {
+    handle_request_with_state(&ServerState::new(pack.clone()), raw_request)
+}
+
+pub fn handle_request_with_state(state: &ServerState, raw_request: &str) -> Result<HttpResponse> {
     let request_line = raw_request
         .lines()
         .next()
@@ -111,10 +168,11 @@ pub fn handle_request(pack: &Pack, raw_request: &str) -> Result<HttpResponse> {
     if method != "GET" {
         return Ok(json_error(405, "method not allowed"));
     }
-    route(pack, target)
+    route(state, target)
 }
 
-fn route(pack: &Pack, target: &str) -> Result<HttpResponse> {
+fn route(state: &ServerState, target: &str) -> Result<HttpResponse> {
+    let pack = &state.pack;
     let (path, query) = split_target(target);
     let query = match parse_query(query) {
         Ok(query) => query,
@@ -145,7 +203,7 @@ fn route(pack: &Pack, target: &str) -> Result<HttpResponse> {
             let Ok(q) = required_query(&query, "q") else {
                 return Ok(json_error(400, "missing query parameter: q"));
             };
-            api_result(api::search_with_filters(
+            api_result(api::search_with_filters_and_embedder(
                 pack,
                 q,
                 api::SearchFilters {
@@ -156,6 +214,7 @@ fn route(pack: &Pack, target: &str) -> Result<HttpResponse> {
                     mode: query.get("mode").map(String::as_str),
                     k: read_usize(&query, "k", 10),
                 },
+                state.semantic_embedder(),
             ))
         }
         "/api/ask" => {
@@ -164,7 +223,10 @@ fn route(pack: &Pack, target: &str) -> Result<HttpResponse> {
             };
             json_response(api::ask(pack, q, read_usize(&query, "k", 5))?)
         }
-        "/api/capabilities" => json_response(api::capabilities(pack)),
+        "/api/capabilities" => json_response(api::capabilities_with_semantic(
+            pack,
+            state.semantic_available(),
+        )),
         "/api/facets" => json_response(api::facets(pack)?),
         "/api/dashboard" => json_response(api::dashboard(
             pack,
@@ -364,8 +426,40 @@ fn reason_phrase(status: u16) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pack_core::embed::Embedder;
     use pack_core::pack::Pack;
     use tempfile::tempdir;
+
+    #[derive(Clone)]
+    struct TestEmbedder;
+
+    impl Embedder for TestEmbedder {
+        fn dimension(&self) -> usize {
+            3
+        }
+
+        fn embed_passages(&self, passages: &[String]) -> Result<Vec<Vec<f32>>> {
+            passages
+                .iter()
+                .map(|passage| {
+                    if passage.contains("수업 설계") {
+                        Ok(vec![1.0, 0.0, 0.0])
+                    } else if passage.contains("바다 고래") {
+                        Ok(vec![0.0, 1.0, 0.0])
+                    } else {
+                        Ok(vec![0.0, 0.0, 1.0])
+                    }
+                })
+                .collect()
+        }
+
+        fn embed_query(&self, query: &str) -> Result<Vec<f32>> {
+            match query {
+                "강의 준비" => Ok(vec![0.95, 0.05, 0.0]),
+                _ => Ok(vec![0.0, 0.0, 1.0]),
+            }
+        }
+    }
 
     #[test]
     fn api_search_http_returns_json() {
@@ -459,6 +553,69 @@ mod tests {
         assert_eq!(body["search_modes"][0]["available"], true);
         assert_eq!(body["search_modes"][1]["mode"], "vector");
         assert_eq!(body["search_modes"][1]["available"], false);
+    }
+
+    #[test]
+    fn api_search_uses_state_embedder_for_vector_mode() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(root.join("notes/lesson.md"), "수업 설계 절차").unwrap();
+        std::fs::write(root.join("notes/whale.md"), "바다 고래 관찰").unwrap();
+        let pack = Pack::open(&root).unwrap();
+        pack.build_index().unwrap();
+        pack.build_chunk_embeddings_with(&TestEmbedder).unwrap();
+        let state = ServerState::new(pack).with_semantic_embedder(TestEmbedder);
+
+        let caps = handle_request_with_state(
+            &state,
+            "GET /api/capabilities HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        )
+        .unwrap();
+        let caps_body: serde_json::Value = serde_json::from_slice(&caps.body).unwrap();
+        assert_eq!(caps_body["semantic_search"], true);
+        assert_eq!(caps_body["search_modes"][1]["available"], true);
+
+        let response = handle_request_with_state(
+            &state,
+            "GET /api/search?q=%EA%B0%95%EC%9D%98%20%EC%A4%80%EB%B9%84&mode=vector&k=1 HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        )
+        .unwrap();
+        assert_eq!(response.status, 200);
+        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(body["mode"], "vector");
+        assert_eq!(body["source"], "sqlite_vec");
+        assert_eq!(body["hits"][0]["note_id"], "lesson");
+        assert_eq!(body["hits"][0]["rank_source"], "vector");
+    }
+
+    #[test]
+    fn api_search_state_embedder_supports_hybrid_mode_with_filters() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(
+            root.join("notes/lesson.md"),
+            "---\ntype: lecture\ntitle: 수업\ntags: [m5]\ncreated: 2026-05-23\n---\n수업 설계 절차",
+        )
+        .unwrap();
+        std::fs::write(root.join("notes/whale.md"), "바다 고래 관찰").unwrap();
+        let pack = Pack::open(&root).unwrap();
+        pack.build_index().unwrap();
+        pack.build_chunk_embeddings_with(&TestEmbedder).unwrap();
+        let state = ServerState::new(pack).with_semantic_embedder(TestEmbedder);
+
+        let response = handle_request_with_state(
+            &state,
+            "GET /api/search?q=%EA%B0%95%EC%9D%98%20%EC%A4%80%EB%B9%84&mode=hybrid&type=lecture&tag=m5&from=2026-01-01&to=2026-12-31&k=3 HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        )
+        .unwrap();
+        assert_eq!(response.status, 200);
+        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(body["mode"], "hybrid");
+        assert_eq!(body["source"], "hybrid_rrf");
+        assert_eq!(body["hits"].as_array().unwrap().len(), 1);
+        assert_eq!(body["hits"][0]["note_id"], "lesson");
     }
 
     #[test]

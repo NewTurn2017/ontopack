@@ -384,6 +384,34 @@ fn serve_once_prints_local_url_and_handles_one_request() {
         .stdout(predicate::str::contains("\"note_id\":\"a\""));
 }
 
+#[cfg(not(feature = "real-embed"))]
+#[test]
+fn serve_semantic_requires_real_embed_build() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("p");
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", root.to_str().unwrap()])
+        .assert()
+        .success();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args([
+            "serve",
+            "--port",
+            "0",
+            "--once",
+            "--semantic",
+            "--request",
+            "GET /api/capabilities HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("real-embed feature"));
+}
+
 #[test]
 fn open_no_browser_prints_viewer_url() {
     let dir = tempdir().unwrap();

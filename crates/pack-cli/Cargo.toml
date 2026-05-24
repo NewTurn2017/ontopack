@@ -20,7 +20,7 @@ clap = { workspace = true }
 
 [features]
 default = []
-real-embed = ["pack-core/real-embed"]
+real-embed = ["pack-core/real-embed", "pack-server/real-embed"]
 
 [dev-dependencies]
 assert_cmd = { workspace = true }

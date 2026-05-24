@@ -506,7 +506,7 @@ impl Pack {
     }
 
     /// 현재 chunks 테이블을 기준으로 청크 임베딩을 재생성한다.
-    pub fn build_chunk_embeddings_with<E: crate::embed::Embedder>(
+    pub fn build_chunk_embeddings_with<E: crate::embed::Embedder + ?Sized>(
         &self,
         embedder: &E,
     ) -> Result<usize> {
@@ -538,7 +538,7 @@ impl Pack {
     }
 
     /// 현재 팩 인덱스에서 벡터 청크 검색을 수행한다.
-    pub fn search_vector_chunks_with<E: crate::embed::Embedder>(
+    pub fn search_vector_chunks_with<E: crate::embed::Embedder + ?Sized>(
         &self,
         query: &str,
         k: usize,
@@ -549,7 +549,7 @@ impl Pack {
     }
 
     /// 현재 팩 인덱스에서 벡터 청크 카드를 검색한다.
-    pub fn search_vector_chunk_hits_with<E: crate::embed::Embedder>(
+    pub fn search_vector_chunk_hits_with<E: crate::embed::Embedder + ?Sized>(
         &self,
         query: &str,
         k: usize,
@@ -560,7 +560,7 @@ impl Pack {
     }
 
     /// 키워드와 벡터 청크 검색 결과를 RRF로 융합한다.
-    pub fn search_hybrid_with<E: crate::embed::Embedder>(
+    pub fn search_hybrid_with<E: crate::embed::Embedder + ?Sized>(
         &self,
         query: &str,
         k: usize,
