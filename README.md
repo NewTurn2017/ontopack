@@ -65,5 +65,8 @@
 - `pack topics [--min-count N] [--json]` — 태그 기반 토픽 노드와 co-occurrence edge를 결정적으로 리포트
 - `pack recommend [note-id] [-k N] [--json]` — 명시 태그가 겹치지만 아직 연결되지 않은 관련 노트 후보를 추천
 
+## M7
+- `pack watch [--once] [--interval-ms N]` — `_inbox` 처리, 증분 인덱싱, object manifest 갱신을 폴링 루프로 실행
+
 ## 다음
 CLIP/실제 STT 같은 provider-heavy 멀티모달 확장, orphan/gap/topic-map 지식 유지보수, watcher/installer/Windows 검증.

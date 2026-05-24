@@ -223,6 +223,17 @@ grep -q 'done_enrichment=1' /tmp/ontopack-real-status-after.out
 (cd "$PACK_DIR" && ONTOPACK_LOCAL_WORKER="$ROOT/scripts/providers/fixture_media_worker.py" OPENAI_API_KEY="" "$PACK_BIN" enrich-pending --provider-command "$ROOT/scripts/providers/auto_media_worker.py" --limit 1 >/tmp/ontopack-real-enrich-pending.out)
 grep -q 'processed=1' /tmp/ontopack-real-enrich-pending.out
 grep -q 'indexed=' /tmp/ontopack-real-enrich-pending.out
+cat > "$PACK_DIR/_inbox/watch-real.md" <<'NOTE'
+---
+type: note
+title: Watch Real Smoke
+tags: [watch, ops]
+---
+watchword 실사용 폴링 스모크 노트.
+NOTE
+(cd "$PACK_DIR" && "$PACK_BIN" watch --once >/tmp/ontopack-real-watch.out)
+grep -q 'watch tick: cycle=1 processed=1' /tmp/ontopack-real-watch.out
+grep -q 'indexed=' /tmp/ontopack-real-watch.out
 
 echo "[4/11] CLI real-user keyword searches"
 CLI_ONTOLOGY="$(cd "$PACK_DIR" && "$PACK_BIN" search "온톨로지" --mode keyword -k 5)"
@@ -234,6 +245,8 @@ CLI_ENRICHED="$(cd "$PACK_DIR" && "$PACK_BIN" search "cockpit" --mode keyword -k
 printf '%s\n' "$CLI_ENRICHED" | grep -q 'demo-video#0000'
 CLI_WORKER="$(cd "$PACK_DIR" && "$PACK_BIN" search "fixture-provider" --mode keyword -k 3)"
 printf '%s\n' "$CLI_WORKER" | grep -q '#0000'
+CLI_WATCH="$(cd "$PACK_DIR" && "$PACK_BIN" search "watchword" --mode keyword -k 3)"
+printf '%s\n' "$CLI_WATCH" | grep -q 'watch-real#0000'
 (cd "$PACK_DIR" && "$PACK_BIN" duplicates >/tmp/ontopack-real-duplicates.out)
 grep -q '중복 후보: groups=1' /tmp/ontopack-real-duplicates.out
 grep -q 'duplicate-a' /tmp/ontopack-real-duplicates.out

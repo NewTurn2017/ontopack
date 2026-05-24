@@ -351,6 +351,35 @@ fn end_to_end_process_build_and_search() {
 }
 
 #[test]
+fn watch_once_processes_inbox_and_incrementally_indexes() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("p");
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", root.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::write(root.join("_inbox/watch-note.md"), "watchword from inbox").unwrap();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["watch", "--once"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("watch tick: cycle=1 processed=1"))
+        .stdout(predicate::str::contains("indexed=1"));
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["search", "watchword", "--mode", "keyword", "-k", "1"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("watch-note#0000"));
+}
+
+#[test]
 fn serve_once_prints_local_url_and_handles_one_request() {
     let dir = tempdir().unwrap();
     let root = dir.path().join("p");

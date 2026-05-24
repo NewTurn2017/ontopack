@@ -17,6 +17,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, Stdio};
+use std::time::Duration;
 
 #[derive(Parser)]
 #[command(name = "pack", about = "ontopack — 로컬 지식 팩 CLI")]
@@ -138,6 +139,15 @@ enum Commands {
         /// 임베딩 없이 키워드/청크 인덱스만 빌드한다
         #[arg(long)]
         no_embed: bool,
+    },
+    /// _inbox 처리와 증분 인덱싱을 반복 실행한다
+    Watch {
+        /// 한 번만 실행하고 종료한다
+        #[arg(long)]
+        once: bool,
+        /// 폴링 간격(ms)
+        #[arg(long, default_value_t = 1000)]
+        interval_ms: u64,
     },
     /// 실제 임베딩 모델로 chunks 벡터 인덱스를 빌드한다
     Embed {
@@ -421,6 +431,30 @@ fn main() -> Result<()> {
                 } else {
                     println!("인덱스 빌드 완료: 노트 {count}개");
                 }
+            }
+        }
+        Commands::Watch { once, interval_ms } => {
+            let root = find_pack_root(&std::env::current_dir()?)?;
+            let pack = Pack::open(&root)?;
+            let mut cycle = 0usize;
+            loop {
+                cycle += 1;
+                let processed = pack.process_inbox()?.processed;
+                let report = pack.build_index_incremental()?;
+                let manifest = pack.refresh_object_manifest()?;
+                println!(
+                    "watch tick: cycle={} processed={} indexed={} skipped={} removed={} manifest={}",
+                    cycle,
+                    processed,
+                    report.indexed,
+                    report.skipped,
+                    report.removed,
+                    manifest.display()
+                );
+                if once {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(interval_ms.max(100)));
             }
         }
         Commands::Embed { skip_build } => {
