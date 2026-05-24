@@ -417,6 +417,34 @@ fn doctor_reports_pack_health_without_mutating() {
 }
 
 #[test]
+fn completions_print_supported_shell_scripts() {
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["completions", "zsh"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("#compdef pack"))
+        .stdout(predicate::str::contains("doctor"))
+        .stdout(predicate::str::contains("watch"));
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["completions", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "complete -F _pack_completions pack",
+        ));
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["completions", "fish"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("complete -c pack"));
+}
+
+#[test]
 fn serve_once_prints_local_url_and_handles_one_request() {
     let dir = tempdir().unwrap();
     let root = dir.path().join("p");

@@ -156,6 +156,11 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// shell completion 스크립트를 출력한다
+    Completions {
+        /// 대상 shell
+        shell: CompletionShellArg,
+    },
     /// 실제 임베딩 모델로 chunks 벡터 인덱스를 빌드한다
     Embed {
         /// 키워드/청크 인덱스 재빌드를 건너뛴다
@@ -256,6 +261,13 @@ enum ExportFormatArg {
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum ImportFormatArg {
     Jsonl,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum CompletionShellArg {
+    Bash,
+    Zsh,
+    Fish,
 }
 
 fn main() -> Result<()> {
@@ -471,6 +483,9 @@ fn main() -> Result<()> {
             } else {
                 print_doctor_report(&report);
             }
+        }
+        Commands::Completions { shell } => {
+            print_completion_script(shell);
         }
         Commands::Embed { skip_build } => {
             let root = find_pack_root(&std::env::current_dir()?)?;
@@ -701,6 +716,34 @@ fn print_doctor_report(report: &DoctorReport) {
             check.name,
             check.detail
         );
+    }
+}
+
+fn print_completion_script(shell: CompletionShellArg) {
+    const COMMANDS: &str = "init add process status list duplicates orphans gaps topics recommend enrich-note enrich-pending build watch doctor completions embed search export import bundle serve open";
+    match shell {
+        CompletionShellArg::Bash => println!(
+            r#"# OntoPack bash completion
+_pack_completions() {{
+  local cur="${{COMP_WORDS[COMP_CWORD]}}"
+  COMPREPLY=($(compgen -W "{COMMANDS}" -- "$cur"))
+}}
+complete -F _pack_completions pack"#
+        ),
+        CompletionShellArg::Zsh => println!(
+            r#"#compdef pack
+# OntoPack zsh completion
+_pack() {{
+  local -a commands
+  commands=({COMMANDS})
+  _describe 'pack command' commands
+}}
+compdef _pack pack"#
+        ),
+        CompletionShellArg::Fish => println!(
+            r#"# OntoPack fish completion
+complete -c pack -f -a "{COMMANDS}""#
+        ),
     }
 }
 

@@ -225,6 +225,11 @@ grep -q 'doctor: ok=true' /tmp/ontopack-real-doctor.out
 grep -q -- '- ok index' /tmp/ontopack-real-doctor.out
 (cd "$PACK_DIR" && "$PACK_BIN" doctor --json >/tmp/ontopack-real-doctor.json)
 grep -q '"ok": true' /tmp/ontopack-real-doctor.json
+"$PACK_BIN" completions zsh >/tmp/ontopack-real-completions.zsh
+grep -q '#compdef pack' /tmp/ontopack-real-completions.zsh
+grep -q 'doctor' /tmp/ontopack-real-completions.zsh
+"$PACK_BIN" completions bash >/tmp/ontopack-real-completions.bash
+grep -q 'complete -F _pack_completions pack' /tmp/ontopack-real-completions.bash
 (cd "$PACK_DIR" && ONTOPACK_LOCAL_WORKER="$ROOT/scripts/providers/fixture_media_worker.py" OPENAI_API_KEY="" "$PACK_BIN" enrich-pending --provider-command "$ROOT/scripts/providers/auto_media_worker.py" --limit 1 >/tmp/ontopack-real-enrich-pending.out)
 grep -q 'processed=1' /tmp/ontopack-real-enrich-pending.out
 grep -q 'indexed=' /tmp/ontopack-real-enrich-pending.out
