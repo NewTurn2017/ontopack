@@ -11,6 +11,18 @@ if ([string]::IsNullOrWhiteSpace($Root)) {
     $Root = Join-Path ([System.IO.Path]::GetTempPath()) ("ontopack-win-smoke-" + [System.Guid]::NewGuid().ToString("N"))
 }
 
+try {
+    if (Test-Path -LiteralPath $PackBin) {
+        $PackBin = (Resolve-Path -LiteralPath $PackBin).Path
+    }
+    else {
+        $PackBin = (Get-Command $PackBin -ErrorAction Stop).Source
+    }
+}
+catch {
+    throw "could not resolve -PackBin '$PackBin' before changing directories. Pass an existing path such as .\target\release\pack.exe or ensure 'pack' is on PATH."
+}
+
 function Assert-Contains {
     param(
         [string]$Text,
