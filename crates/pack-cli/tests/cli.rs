@@ -465,6 +465,37 @@ fn duplicates_reports_matching_note_bodies() {
 }
 
 #[test]
+fn orphans_reports_unlinked_notes() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("p");
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", root.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::write(root.join("notes/a.md"), "A [[b]]").unwrap();
+    std::fs::write(root.join("notes/b.md"), "B").unwrap();
+    std::fs::write(root.join("notes/c.md"), "---\ntitle: C\n---\n외톨이").unwrap();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["orphans"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("외톨이 노트: count=1"))
+        .stdout(predicate::str::contains("- c [note]"));
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["orphans", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#""note_id": "c""#));
+}
+
+#[test]
 fn status_and_list_report_pending_enrichment() {
     let dir = tempdir().unwrap();
     let root = dir.path().join("p");

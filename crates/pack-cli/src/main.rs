@@ -6,7 +6,9 @@ use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use pack_core::enrichment::EnrichmentPatch;
-use pack_core::pack::{find_pack_root, AddOutcome, DuplicateGroup, Pack, PackObject, PackStatus};
+use pack_core::pack::{
+    find_pack_root, AddOutcome, DuplicateGroup, OrphanNote, Pack, PackObject, PackStatus,
+};
 use pack_core::search::{RankSource, SearchHit};
 use serde::Deserialize;
 use serde_json::json;
@@ -56,6 +58,12 @@ enum Commands {
     },
     /// 본문이 같은 중복 후보 노트 그룹을 찾는다
     Duplicates {
+        /// JSON으로 출력한다
+        #[arg(long)]
+        json: bool,
+    },
+    /// incoming/outgoing 링크가 없는 외톨이 노트를 찾는다
+    Orphans {
         /// JSON으로 출력한다
         #[arg(long)]
         json: bool,
@@ -271,6 +279,16 @@ fn main() -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&groups)?);
             } else {
                 print_duplicate_groups(&groups);
+            }
+        }
+        Commands::Orphans { json } => {
+            let root = find_pack_root(&std::env::current_dir()?)?;
+            let pack = Pack::open(&root)?;
+            let orphans = pack.orphan_notes()?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&orphans)?);
+            } else {
+                print_orphan_notes(&orphans);
             }
         }
         Commands::EnrichNote {
@@ -620,6 +638,24 @@ fn print_duplicate_groups(groups: &[DuplicateGroup]) {
                 candidate.asset.as_deref().unwrap_or("-")
             );
         }
+    }
+}
+
+fn print_orphan_notes(orphans: &[OrphanNote]) {
+    if orphans.is_empty() {
+        println!("외톨이 노트 없음");
+        return;
+    }
+    println!("외톨이 노트: count={}", orphans.len());
+    for note in orphans {
+        println!(
+            "- {} [{}] title={} path={} asset={}",
+            note.note_id,
+            note.note_type,
+            note.title,
+            note.path,
+            note.asset.as_deref().unwrap_or("-")
+        );
     }
 }
 

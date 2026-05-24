@@ -6,7 +6,7 @@ use crate::process::{infer_type, ProcessReport};
 use crate::search::{rrf_fuse, NoteHit, SearchFilters, SearchHit};
 use anyhow::{anyhow, bail, Context, Result};
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use walkdir::WalkDir;
@@ -106,6 +106,15 @@ pub struct DuplicateGroup {
     pub fingerprint: String,
     pub normalized_len: usize,
     pub candidates: Vec<DuplicateCandidate>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct OrphanNote {
+    pub note_id: String,
+    pub title: String,
+    pub note_type: String,
+    pub path: String,
+    pub asset: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -364,6 +373,36 @@ impl Pack {
                 .then_with(|| a.fingerprint.cmp(&b.fingerprint))
         });
         Ok(groups)
+    }
+
+    pub fn orphan_notes(&self) -> Result<Vec<OrphanNote>> {
+        let notes = self.scan_notes()?;
+        let note_ids = notes
+            .iter()
+            .map(|note| note.id.clone())
+            .collect::<BTreeSet<_>>();
+        let mut incoming = BTreeSet::new();
+        for note in &notes {
+            for target in &note.related {
+                if note_ids.contains(target.as_str()) {
+                    incoming.insert(target.clone());
+                }
+            }
+        }
+
+        let mut orphans = notes
+            .into_iter()
+            .filter(|note| note.related.is_empty() && !incoming.contains(&note.id))
+            .map(|note| OrphanNote {
+                note_id: note.id,
+                title: note.title,
+                note_type: note.note_type,
+                path: relative_display(&self.root, &note.path),
+                asset: note.asset,
+            })
+            .collect::<Vec<_>>();
+        orphans.sort_by(|a, b| a.note_id.cmp(&b.note_id));
+        Ok(orphans)
     }
 
     pub fn update_enrichment(&self, note_id: &str, patch: &EnrichmentPatch) -> Result<PathBuf> {
@@ -1195,6 +1234,40 @@ mod tests {
         let pack = Pack::open(&root).unwrap();
 
         assert!(pack.duplicate_notes().unwrap().is_empty());
+    }
+
+    #[test]
+    fn orphan_notes_reports_notes_without_incoming_or_outgoing_links() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(root.join("notes/a.md"), "A [[b]]").unwrap();
+        std::fs::write(root.join("notes/b.md"), "B").unwrap();
+        std::fs::write(root.join("notes/c.md"), "---\ntitle: C\n---\n외톨이").unwrap();
+        let pack = Pack::open(&root).unwrap();
+
+        let orphans = pack.orphan_notes().unwrap();
+        assert_eq!(orphans.len(), 1);
+        assert_eq!(orphans[0].note_id, "c");
+        assert_eq!(orphans[0].path, "notes/c.md");
+    }
+
+    #[test]
+    fn orphan_notes_treats_missing_link_targets_as_gap_not_connection() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(root.join("notes/a.md"), "A [[missing]]").unwrap();
+        std::fs::write(root.join("notes/b.md"), "B").unwrap();
+        let pack = Pack::open(&root).unwrap();
+
+        let ids: Vec<_> = pack
+            .orphan_notes()
+            .unwrap()
+            .into_iter()
+            .map(|note| note.note_id)
+            .collect();
+        assert_eq!(ids, vec!["b"]);
     }
 
     #[test]

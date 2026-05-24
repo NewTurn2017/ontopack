@@ -127,6 +127,15 @@ tags: [ops]
 반복되는   운영 메모 본문이다.
 NOTE
 
+cat > "$PACK_DIR/notes/orphan-gap.md" <<'NOTE'
+---
+type: note
+title: 연결 점검용 외톨이 노트
+tags: [ops, hygiene]
+---
+어떤 노트와도 연결되지 않은 유지보수 점검용 노트다.
+NOTE
+
 printf '\x89PNG\r\n' > "$PACK_DIR/evidence.png"
 (cd "$PACK_DIR" && "$PACK_BIN" add "$PACK_DIR/evidence.png" --type image >/tmp/ontopack-real-add-image.out)
 cat > "$PACK_DIR/notes/evidence-image.md" <<'NOTE'
@@ -203,6 +212,11 @@ printf '%s\n' "$CLI_WORKER" | grep -q '#0000'
 grep -q '중복 후보: groups=1' /tmp/ontopack-real-duplicates.out
 grep -q 'duplicate-a' /tmp/ontopack-real-duplicates.out
 grep -q 'duplicate-b' /tmp/ontopack-real-duplicates.out
+(cd "$PACK_DIR" && "$PACK_BIN" orphans >/tmp/ontopack-real-orphans.out)
+grep -q '외톨이 노트: count=' /tmp/ontopack-real-orphans.out
+grep -q 'orphan-gap' /tmp/ontopack-real-orphans.out
+(cd "$PACK_DIR" && "$PACK_BIN" orphans --json >/tmp/ontopack-real-orphans.json)
+grep -q '"note_id": "orphan-gap"' /tmp/ontopack-real-orphans.json
 
 echo "[5/11] portable context exports"
 (cd "$PACK_DIR" && "$PACK_BIN" export --format jsonl >/tmp/ontopack-real-export.jsonl)
