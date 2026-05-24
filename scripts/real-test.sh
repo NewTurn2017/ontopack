@@ -145,6 +145,23 @@ tags: [ops, hygiene]
 이 노트는 아직 만들지 않은 [[missing-hygiene-target]]을 가리킨다.
 NOTE
 
+cat > "$PACK_DIR/notes/recommend-a.md" <<'NOTE'
+---
+type: note
+title: 추천 소스 A
+tags: [recommend, ontology]
+---
+태그가 겹치는 관련 노트 후보를 찾기 위한 소스 노트다.
+NOTE
+cat > "$PACK_DIR/notes/recommend-b.md" <<'NOTE'
+---
+type: note
+title: 추천 후보 B
+tags: [recommend, ontology]
+---
+아직 링크되지는 않았지만 recommend-a와 명시 태그가 겹친다.
+NOTE
+
 printf '\x89PNG\r\n' > "$PACK_DIR/evidence.png"
 (cd "$PACK_DIR" && "$PACK_BIN" add "$PACK_DIR/evidence.png" --type image >/tmp/ontopack-real-add-image.out)
 cat > "$PACK_DIR/notes/evidence-image.md" <<'NOTE'
@@ -236,6 +253,11 @@ grep -q '토픽맵: topics=' /tmp/ontopack-real-topics.out
 grep -q 'topic ontology count=' /tmp/ontopack-real-topics.out
 (cd "$PACK_DIR" && "$PACK_BIN" topics --min-count 3 --json >/tmp/ontopack-real-topics.json)
 grep -q '"topic": "ontology"' /tmp/ontopack-real-topics.json
+(cd "$PACK_DIR" && "$PACK_BIN" recommend recommend-a -k 1 >/tmp/ontopack-real-recommend.out)
+grep -q '관련 노트 추천: count=1' /tmp/ontopack-real-recommend.out
+grep -q 'recommend-a -> recommend-b score=2' /tmp/ontopack-real-recommend.out
+(cd "$PACK_DIR" && "$PACK_BIN" recommend recommend-a --json >/tmp/ontopack-real-recommend.json)
+grep -q '"candidate_id": "recommend-b"' /tmp/ontopack-real-recommend.json
 
 echo "[5/11] portable context exports"
 (cd "$PACK_DIR" && "$PACK_BIN" export --format jsonl >/tmp/ontopack-real-export.jsonl)

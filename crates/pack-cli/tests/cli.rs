@@ -566,6 +566,50 @@ fn topics_reports_tag_topic_map() {
 }
 
 #[test]
+fn recommend_reports_unlinked_notes_with_shared_tags() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("p");
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", root.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::write(
+        root.join("notes/a.md"),
+        "---\ntitle: A\ntags: [ontology, lecture]\nrelated: [b]\n---\nA",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("notes/b.md"),
+        "---\ntitle: B\ntags: [ontology, lecture]\n---\nB",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("notes/c.md"),
+        "---\ntitle: C\ntags: [ontology, lecture, agent]\n---\nC",
+    )
+    .unwrap();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["recommend", "a", "-k", "1"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("관련 노트 추천: count=1"))
+        .stdout(predicate::str::contains("a -> c score=2"))
+        .stdout(predicate::str::contains("a -> b").not());
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["recommend", "a", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#""candidate_id": "c""#));
+}
+
+#[test]
 fn status_and_list_report_pending_enrichment() {
     let dir = tempdir().unwrap();
     let root = dir.path().join("p");

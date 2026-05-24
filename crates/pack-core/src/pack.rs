@@ -146,6 +146,16 @@ pub struct TopicMap {
     pub edges: Vec<TopicEdge>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RelatedSuggestion {
+    pub source_id: String,
+    pub source_title: String,
+    pub candidate_id: String,
+    pub candidate_title: String,
+    pub score: usize,
+    pub shared_tags: Vec<String>,
+}
+
 #[derive(Serialize)]
 struct AssetSidecarFrontMatter<'a> {
     #[serde(rename = "type")]
@@ -541,6 +551,80 @@ impl Pack {
         });
 
         Ok(TopicMap { topics, edges })
+    }
+
+    pub fn related_suggestions(
+        &self,
+        note_id: Option<&str>,
+        k: usize,
+    ) -> Result<Vec<RelatedSuggestion>> {
+        let notes = self.scan_notes()?;
+        if let Some(note_id) = note_id {
+            if !notes.iter().any(|note| note.id == note_id) {
+                bail!("note not found: {note_id}");
+            }
+        }
+        let k = k.max(1);
+        let mut suggestions = Vec::new();
+        for source in &notes {
+            if note_id.is_some_and(|note_id| source.id != note_id) {
+                continue;
+            }
+
+            let source_tags = source
+                .tags
+                .iter()
+                .map(|tag| tag.trim())
+                .filter(|tag| !tag.is_empty())
+                .collect::<BTreeSet<_>>();
+            if source_tags.is_empty() {
+                continue;
+            }
+
+            let mut per_source = Vec::new();
+            for candidate in &notes {
+                if source.id == candidate.id
+                    || source.related.contains(&candidate.id)
+                    || candidate.related.contains(&source.id)
+                {
+                    continue;
+                }
+                let shared_tags = candidate
+                    .tags
+                    .iter()
+                    .map(|tag| tag.trim())
+                    .filter(|tag| source_tags.contains(tag))
+                    .filter(|tag| !tag.is_empty())
+                    .map(str::to_string)
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                if shared_tags.is_empty() {
+                    continue;
+                }
+                per_source.push(RelatedSuggestion {
+                    source_id: source.id.clone(),
+                    source_title: source.title.clone(),
+                    candidate_id: candidate.id.clone(),
+                    candidate_title: candidate.title.clone(),
+                    score: shared_tags.len(),
+                    shared_tags,
+                });
+            }
+            per_source.sort_by(|a, b| {
+                b.score
+                    .cmp(&a.score)
+                    .then_with(|| a.candidate_id.cmp(&b.candidate_id))
+            });
+            suggestions.extend(per_source.into_iter().take(k));
+        }
+        suggestions.sort_by(|a, b| {
+            a.source_id
+                .cmp(&b.source_id)
+                .then_with(|| b.score.cmp(&a.score))
+                .then_with(|| a.candidate_id.cmp(&b.candidate_id))
+        });
+        Ok(suggestions)
     }
 
     pub fn update_enrichment(&self, note_id: &str, patch: &EnrichmentPatch) -> Result<PathBuf> {
@@ -1457,6 +1541,39 @@ mod tests {
         assert_eq!(filtered.topics.len(), 1);
         assert_eq!(filtered.topics[0].topic, "ontology");
         assert!(filtered.edges.is_empty());
+    }
+
+    #[test]
+    fn related_suggestions_rank_shared_tags_and_skip_existing_links() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(
+            root.join("notes/a.md"),
+            "---\ntags: [ontology, lecture]\nrelated: [b]\n---\nA",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("notes/b.md"),
+            "---\ntags: [ontology, lecture]\n---\nB",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("notes/c.md"),
+            "---\ntags: [ontology, lecture, agent]\n---\nC",
+        )
+        .unwrap();
+        std::fs::write(root.join("notes/d.md"), "---\ntags: [agent]\n---\nD").unwrap();
+        let pack = Pack::open(&root).unwrap();
+
+        let suggestions = pack.related_suggestions(Some("a"), 3).unwrap();
+        assert_eq!(suggestions.len(), 1);
+        assert_eq!(suggestions[0].candidate_id, "c");
+        assert_eq!(suggestions[0].score, 2);
+        assert_eq!(suggestions[0].shared_tags, vec!["lecture", "ontology"]);
+
+        let limited = pack.related_suggestions(None, 1).unwrap();
+        assert!(limited.iter().any(|item| item.source_id == "a"));
     }
 
     #[test]

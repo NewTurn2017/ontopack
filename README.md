@@ -63,6 +63,7 @@
 - `pack orphans [--json]` — incoming/outgoing wiki link가 모두 없는 외톨이 노트를 read-only로 리포트
 - `pack gaps [--json]` — 존재하지 않는 노트 id로 향하는 깨진 wiki link를 read-only로 리포트
 - `pack topics [--min-count N] [--json]` — 태그 기반 토픽 노드와 co-occurrence edge를 결정적으로 리포트
+- `pack recommend [note-id] [-k N] [--json]` — 명시 태그가 겹치지만 아직 연결되지 않은 관련 노트 후보를 추천
 
 ## 다음
 CLIP/실제 STT 같은 provider-heavy 멀티모달 확장, orphan/gap/topic-map 지식 유지보수, watcher/installer/Windows 검증.

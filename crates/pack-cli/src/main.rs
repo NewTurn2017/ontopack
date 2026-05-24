@@ -8,7 +8,7 @@ use flate2::Compression;
 use pack_core::enrichment::EnrichmentPatch;
 use pack_core::pack::{
     find_pack_root, AddOutcome, DuplicateGroup, LinkGap, OrphanNote, Pack, PackObject, PackStatus,
-    TopicMap,
+    RelatedSuggestion, TopicMap,
 };
 use pack_core::search::{RankSource, SearchHit};
 use serde::Deserialize;
@@ -80,6 +80,17 @@ enum Commands {
         /// 최소 등장 노트 수
         #[arg(long, default_value_t = 1)]
         min_count: usize,
+        /// JSON으로 출력한다
+        #[arg(long)]
+        json: bool,
+    },
+    /// 태그가 겹치지만 아직 연결되지 않은 관련 노트를 추천한다
+    Recommend {
+        /// 특정 source note id만 추천한다
+        note_id: Option<String>,
+        /// source note별 최대 추천 수
+        #[arg(short, default_value_t = 10)]
+        k: usize,
         /// JSON으로 출력한다
         #[arg(long)]
         json: bool,
@@ -325,6 +336,16 @@ fn main() -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&topic_map)?);
             } else {
                 print_topic_map(&topic_map);
+            }
+        }
+        Commands::Recommend { note_id, k, json } => {
+            let root = find_pack_root(&std::env::current_dir()?)?;
+            let pack = Pack::open(&root)?;
+            let suggestions = pack.related_suggestions(note_id.as_deref(), k)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&suggestions)?);
+            } else {
+                print_related_suggestions(&suggestions);
             }
         }
         Commands::EnrichNote {
@@ -730,6 +751,25 @@ fn print_topic_map(topic_map: &TopicMap) {
             edge.target,
             edge.weight,
             edge.notes.join(",")
+        );
+    }
+}
+
+fn print_related_suggestions(suggestions: &[RelatedSuggestion]) {
+    if suggestions.is_empty() {
+        println!("관련 노트 추천 없음");
+        return;
+    }
+    println!("관련 노트 추천: count={}", suggestions.len());
+    for item in suggestions {
+        println!(
+            "- {} -> {} score={} tags={} source_title={} candidate_title={}",
+            item.source_id,
+            item.candidate_id,
+            item.score,
+            item.shared_tags.join(","),
+            item.source_title,
+            item.candidate_title
         );
     }
 }
