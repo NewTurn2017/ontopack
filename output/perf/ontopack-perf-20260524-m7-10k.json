@@ -1,0 +1,201 @@
+{
+  "generated_at": "2026-05-24T13:44:39.100296+00:00",
+  "pack_dir": "/var/folders/6w/ryvjgm214g361w38k2x2dcch0000gn/T//ontopack-perf.pvtVpX",
+  "server_url": "http://127.0.0.1:49395",
+  "note_count": 10000,
+  "media_count": 500,
+  "warmup": 1,
+  "repeats": 3,
+  "results": {
+    "capabilities": {
+      "path": "/api/capabilities",
+      "repeats": 3,
+      "wall_ms": {
+        "min": 0.181,
+        "p50": 0.197,
+        "p95": 0.241,
+        "max": 0.241
+      },
+      "payload_elapsed_ms": {
+        "min": null,
+        "p50": null,
+        "max": null
+      },
+      "bytes": {
+        "min": 628,
+        "max": 628
+      }
+    },
+    "dashboard_all": {
+      "path": "/api/dashboard?gallery_k=12&timeline_k=10&graph_limit=80",
+      "repeats": 3,
+      "wall_ms": {
+        "min": 26.07,
+        "p50": 26.57,
+        "p95": 26.623,
+        "max": 26.623
+      },
+      "payload_elapsed_ms": {
+        "min": 24,
+        "p50": 25,
+        "max": 25
+      },
+      "bytes": {
+        "min": 29920,
+        "max": 29920
+      }
+    },
+    "dashboard_image": {
+      "path": "/api/dashboard?type=image&gallery_k=12&timeline_k=10&graph_limit=80",
+      "repeats": 3,
+      "wall_ms": {
+        "min": 27.52,
+        "p50": 27.772,
+        "p95": 28.295,
+        "max": 28.295
+      },
+      "payload_elapsed_ms": {
+        "min": 26,
+        "p50": 26,
+        "max": 27
+      },
+      "bytes": {
+        "min": 29920,
+        "max": 29920
+      }
+    },
+    "search_needle": {
+      "path": "/api/search?q=%EC%84%B1%EB%8A%A5%20%EB%8B%88%EB%93%A4&type=prompt&tag=needle&k=12",
+      "repeats": 3,
+      "wall_ms": {
+        "min": 2.164,
+        "p50": 2.273,
+        "p95": 2.507,
+        "max": 2.507
+      },
+      "payload_elapsed_ms": {
+        "min": 1,
+        "p50": 1,
+        "max": 1
+      },
+      "bytes": {
+        "min": 18436,
+        "max": 18436
+      }
+    },
+    "search_common": {
+      "path": "/api/search?q=%EA%B3%B5%ED%86%B5%EC%A7%88%EB%AC%B8&k=12",
+      "repeats": 3,
+      "wall_ms": {
+        "min": 20.382,
+        "p50": 20.638,
+        "p95": 20.726,
+        "max": 20.726
+      },
+      "payload_elapsed_ms": {
+        "min": 19,
+        "p50": 19,
+        "max": 19
+      },
+      "bytes": {
+        "min": 17753,
+        "max": 17753
+      }
+    },
+    "gallery": {
+      "path": "/api/gallery?k=24",
+      "repeats": 3,
+      "wall_ms": {
+        "min": 1.326,
+        "p50": 1.364,
+        "p95": 1.526,
+        "max": 1.526
+      },
+      "payload_elapsed_ms": {
+        "min": null,
+        "p50": null,
+        "max": null
+      },
+      "bytes": {
+        "min": 35250,
+        "max": 35250
+      }
+    },
+    "timeline": {
+      "path": "/api/timeline?from=2026-05-01&to=2026-05-28&k=24",
+      "repeats": 3,
+      "wall_ms": {
+        "min": 1.037,
+        "p50": 1.172,
+        "p95": 1.208,
+        "max": 1.208
+      },
+      "payload_elapsed_ms": {
+        "min": null,
+        "p50": null,
+        "max": null
+      },
+      "bytes": {
+        "min": 4795,
+        "max": 4795
+      }
+    },
+    "graph": {
+      "path": "/api/graph?limit=160",
+      "repeats": 3,
+      "wall_ms": {
+        "min": 7.083,
+        "p50": 7.376,
+        "p95": 7.466,
+        "max": 7.466
+      },
+      "payload_elapsed_ms": {
+        "min": null,
+        "p50": null,
+        "max": null
+      },
+      "bytes": {
+        "min": 19541,
+        "max": 19541
+      }
+    },
+    "note_detail": {
+      "path": "/api/notes/bench-0000",
+      "repeats": 3,
+      "wall_ms": {
+        "min": 0.52,
+        "p50": 0.564,
+        "p95": 0.581,
+        "max": 0.581
+      },
+      "payload_elapsed_ms": {
+        "min": null,
+        "p50": null,
+        "max": null
+      },
+      "bytes": {
+        "min": 1581,
+        "max": 1581
+      }
+    },
+    "related": {
+      "path": "/api/related/bench-0100?depth=1",
+      "repeats": 3,
+      "wall_ms": {
+        "min": 0.439,
+        "p50": 0.44,
+        "p95": 0.519,
+        "max": 0.519
+      },
+      "payload_elapsed_ms": {
+        "min": null,
+        "p50": null,
+        "max": null
+      },
+      "bytes": {
+        "min": 222,
+        "max": 222
+      }
+    }
+  }
+}
