@@ -224,15 +224,26 @@ function mediaMarkup(item, size = 'thumb', interactive = false) {
   return `<figure class="media-preview media-${size} media-token"><span>${escapeHtml((item.mime || 'FILE').split('/').pop().toUpperCase())}</span></figure>`;
 }
 
+function mediaCitation(hit) {
+  const citation = hit && hit.media_citation;
+  if (!citation) return '';
+  const time = escapeHtml(citation.time || '00:00');
+  const url = citation.asset_url ? ` · ${escapeHtml(citation.asset_url)}` : '';
+  return `<span class="media-citation" title="media citation${url}">⏱ ${time}</span>`;
+}
+
 function card(hit) {
   const id = hit.note_id || hit.id;
   const type = hit.note_type || 'record';
   const meta = hit.chunk_id || hit.id || '';
-  return `<button class="card source-card type-${escapeHtml(type)}" data-note-id="${escapeHtml(id)}">
+  const citation = hit && hit.media_citation;
+  const seek = citation && Number.isFinite(Number(citation.seconds)) ? ` data-seek="${escapeHtml(citation.seconds)}"` : '';
+  return `<button class="card source-card type-${escapeHtml(type)}" data-note-id="${escapeHtml(id)}"${seek}>
     ${mediaMarkup(hit, 'thumb', false)}
     <span class="card-kicker">${escapeHtml(type)}</span>
     <strong>${escapeHtml(hit.title)}</strong>
     <span class="meta-line">${escapeHtml(meta)}</span>
+    ${mediaCitation(hit)}
     <p>${escapeHtml(hit.snippet || hit.caption || hit.created || '')}</p>
   </button>`;
 }
@@ -492,7 +503,10 @@ $('search-input').addEventListener('input', debouncedSearch);
 document.body.addEventListener('click', async (event) => {
   if (event.target.closest('video, audio, a')) return;
   const target = event.target.closest('[data-note-id]');
-  if (target) await openNote(target.dataset.noteId);
+  if (target) {
+    await openNote(target.dataset.noteId);
+    if (target.dataset.seek) seekDetailVideo(Number.parseFloat(target.dataset.seek));
+  }
 });
 
 document.body.addEventListener('keydown', async (event) => {
@@ -501,6 +515,7 @@ document.body.addEventListener('keydown', async (event) => {
   if (!target) return;
   event.preventDefault();
   await openNote(target.dataset.noteId);
+  if (target.dataset.seek) seekDetailVideo(Number.parseFloat(target.dataset.seek));
 });
 
 Promise.all([loadCapabilities(), loadDashboard()]).catch(console.error);
@@ -784,6 +799,19 @@ input::placeholder { color: rgba(216,229,224,.45); }
 }
 .gallery-card { cursor: pointer; }
 .gallery-card video { cursor: auto; }
+.media-citation {
+  display: inline-flex;
+  width: max-content;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  border: 1px solid rgba(96,165,250,.42);
+  color: #bfdbfe;
+  background: rgba(37,99,235,.16);
+  padding: 3px 7px;
+  font-size: 11px;
+  letter-spacing: .08em;
+}
 .keyframe-strip {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));

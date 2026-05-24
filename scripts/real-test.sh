@@ -160,7 +160,10 @@ grep -q 'skipped=' /tmp/ontopack-real-build-incremental.out
 grep -q 'pending_enrichment=' /tmp/ontopack-real-status-before.out
 (cd "$PACK_DIR" && "$PACK_BIN" list --pending-enrichment >/tmp/ontopack-real-pending.out)
 grep -q 'demo-video' /tmp/ontopack-real-pending.out
-(cd "$PACK_DIR" && "$PACK_BIN" enrich-note demo-video --caption 'AI generated cockpit walkthrough for OntoPack retrieval' --tag enriched --provider real-test --model deterministic >/tmp/ontopack-real-enrich.out)
+cat > "$PACK_DIR/demo-video-transcript.txt" <<'NOTE'
+[00:00:07] AI generated cockpit walkthrough for OntoPack retrieval timelinejump
+NOTE
+(cd "$PACK_DIR" && "$PACK_BIN" enrich-note demo-video --caption 'AI generated cockpit walkthrough for OntoPack retrieval' --transcript "$PACK_DIR/demo-video-transcript.txt" --tag enriched --provider real-test --model deterministic >/tmp/ontopack-real-enrich.out)
 grep -q 'enrichment 업데이트' /tmp/ontopack-real-enrich.out
 (cd "$PACK_DIR" && "$PACK_BIN" build --incremental --no-embed >/tmp/ontopack-real-build-enriched.out)
 (cd "$PACK_DIR" && "$PACK_BIN" status >/tmp/ontopack-real-status-after.out)
@@ -240,6 +243,8 @@ test ! -e /tmp/ontopack-real-broken-bundle-restore/notes/evidence-image.md
 echo "[6/11] viewer API filtered search, including >100 distractors"
 SEARCH_JSON="$(serve_json $'GET /api/search?q=%EA%B3%B5%ED%86%B5%EC%A7%88%EB%AC%B8&type=prompt&tag=needle&from=2026-05-01&to=2026-05-31&k=1 HTTP/1.1\r\nHost: localhost\r\n\r\n')"
 assert_json "filtered search returns target with timing" "$SEARCH_JSON" 'len(v["hits"]) == 1 and v["hits"][0]["note_id"] == "filter-target" and v["mode"] == "keyword" and v["source"] == "sqlite_fts" and isinstance(v["elapsed_ms"], int)'
+MEDIA_CITATION_JSON="$(serve_json $'GET /api/search?q=timelinejump&k=1 HTTP/1.1\r\nHost: localhost\r\n\r\n')"
+assert_json "video transcript search exposes media citation time" "$MEDIA_CITATION_JSON" 'v["hits"][0]["note_id"] == "demo-video" and v["hits"][0]["media_citation"]["time"] == "00:00:07" and v["hits"][0]["media_citation"]["seconds"] == 7 and v["hits"][0]["media_citation"]["asset_url"].endswith("#t=7")'
 VECTOR_ERROR_JSON="$(serve_json $'GET /api/search?q=%EA%B3%B5%ED%86%B5%EC%A7%88%EB%AC%B8&mode=vector HTTP/1.1\r\nHost: localhost\r\n\r\n')"
 assert_json "server rejects unavailable vector search honestly" "$VECTOR_ERROR_JSON" '"search mode unavailable" in v["error"]'
 

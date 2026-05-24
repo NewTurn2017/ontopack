@@ -718,6 +718,9 @@ Host: localhost
         let js = viewer::app_js();
         let css = viewer::style_css();
         assert!(js.contains("function mediaMarkup"));
+        assert!(js.contains("function mediaCitation"));
+        assert!(js.contains("hit.media_citation"));
+        assert!(js.contains("if (target.dataset.seek) seekDetailVideo"));
         assert!(js.contains("loading=\"lazy\""));
         assert!(js.contains("preload=\"metadata\""));
         assert!(js.contains("function galleryCard"));
@@ -727,6 +730,7 @@ Host: localhost
         assert!(js.contains("function seekDetailVideo"));
         assert!(js.contains("data-seek"));
         assert!(css.contains(".media-preview"));
+        assert!(css.contains(".media-citation"));
         assert!(css.contains(".gallery-card video"));
         assert!(css.contains(".keyframe-strip"));
         assert!(css.contains(".keyframe-card[data-seek]"));

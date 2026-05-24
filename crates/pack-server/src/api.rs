@@ -41,6 +41,7 @@ pub struct SearchCard {
     pub asset_url: Option<String>,
     pub media_kind: Option<String>,
     pub mime: Option<String>,
+    pub media_citation: Option<MediaCitation>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -75,6 +76,13 @@ pub struct MediaKeyframe {
     pub text: String,
     pub asset: Option<String>,
     pub asset_url: Option<String>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+pub struct MediaCitation {
+    pub time: String,
+    pub seconds: u64,
+    pub asset_url: String,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -458,6 +466,11 @@ pub fn capabilities_with_semantic(pack: &Pack, semantic_available: bool) -> Capa
 
 fn search_card(hit: SearchHit) -> SearchCard {
     let media = media_metadata(hit.asset.as_deref());
+    let media_citation = media_citation_for_hit(
+        media.media_kind.as_deref(),
+        media.asset_url.as_deref(),
+        &hit.snippet,
+    );
     SearchCard {
         note_id: hit.note_id,
         chunk_id: hit.chunk_id,
@@ -471,6 +484,7 @@ fn search_card(hit: SearchHit) -> SearchCard {
         asset_url: media.asset_url,
         media_kind: media.media_kind,
         mime: media.mime,
+        media_citation,
     }
 }
 
@@ -494,6 +508,75 @@ fn media_metadata(asset: Option<&str>) -> MediaMetadata {
         media_kind: Some(media_kind_for_mime(&mime).to_string()),
         mime: Some(mime),
     }
+}
+
+fn media_citation_for_hit(
+    media_kind: Option<&str>,
+    asset_url: Option<&str>,
+    snippet: &str,
+) -> Option<MediaCitation> {
+    if !matches!(media_kind, Some("video" | "audio")) {
+        return None;
+    }
+    let asset_url = asset_url?;
+    let (time, seconds) = parse_first_timecode(snippet)?;
+    Some(MediaCitation {
+        time,
+        seconds,
+        asset_url: format!("{asset_url}#t={seconds}"),
+    })
+}
+
+fn parse_first_timecode(text: &str) -> Option<(String, u64)> {
+    let bytes = text.as_bytes();
+    for start in 0..bytes.len() {
+        if !bytes[start].is_ascii_digit() {
+            continue;
+        }
+        if start > 0 && (bytes[start - 1].is_ascii_digit() || bytes[start - 1] == b':') {
+            continue;
+        }
+        let mut pos = start;
+        let mut groups = Vec::new();
+        loop {
+            let number_start = pos;
+            while pos < bytes.len() && bytes[pos].is_ascii_digit() {
+                pos += 1;
+            }
+            let digits = pos.saturating_sub(number_start);
+            if digits == 0 || digits > 2 {
+                break;
+            }
+            let value = std::str::from_utf8(&bytes[number_start..pos])
+                .ok()?
+                .parse::<u64>()
+                .ok()?;
+            groups.push(value);
+            if pos < bytes.len() && bytes[pos] == b':' && groups.len() < 3 {
+                pos += 1;
+                continue;
+            }
+            break;
+        }
+        if !matches!(groups.len(), 2 | 3) {
+            continue;
+        }
+        if pos < bytes.len() && (bytes[pos].is_ascii_digit() || bytes[pos] == b':') {
+            continue;
+        }
+        let (time, seconds) = match groups.as_slice() {
+            [minutes, seconds] if *seconds < 60 => {
+                (format!("{minutes:02}:{seconds:02}"), minutes * 60 + seconds)
+            }
+            [hours, minutes, seconds] if *minutes < 60 && *seconds < 60 => (
+                format!("{hours:02}:{minutes:02}:{seconds:02}"),
+                hours * 3600 + minutes * 60 + seconds,
+            ),
+            _ => continue,
+        };
+        return Some((time, seconds));
+    }
+    None
 }
 
 fn parse_keyframes(body: &str) -> Vec<MediaKeyframe> {
@@ -981,6 +1064,61 @@ asset: assets/pic.webp
         assert_eq!(response.hits[0].media_kind.as_deref(), Some("image"));
         assert_eq!(response.hits[0].mime.as_deref(), Some("image/webp"));
     }
+
+    #[test]
+    fn search_api_returns_timeline_media_citation_for_transcript_hits() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(
+            root.join("notes/clip.md"),
+            "---
+type: video
+title: Demo Clip
+asset: assets/demo clip.mp4
+---
+영상 설명
+
+## Transcript
+[00:01:05] cockpit overview with semantic needle
+",
+        )
+        .unwrap();
+        let pack = Pack::open(&root).unwrap();
+        pack.build_index().unwrap();
+
+        let response = search(&pack, "semantic needle", None, 10).unwrap();
+        let citation = response.hits[0].media_citation.as_ref().unwrap();
+        assert_eq!(response.hits[0].note_id, "clip");
+        assert_eq!(citation.time, "00:01:05");
+        assert_eq!(citation.seconds, 65);
+        assert_eq!(citation.asset_url, "/assets/demo%20clip.mp4#t=65");
+    }
+
+    #[test]
+    fn search_api_does_not_add_media_citation_to_images() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(
+            root.join("notes/pic.md"),
+            "---
+type: image
+title: Pic
+asset: assets/pic.png
+---
+[00:01] timestamp-looking image caption
+",
+        )
+        .unwrap();
+        let pack = Pack::open(&root).unwrap();
+        pack.build_index().unwrap();
+
+        let response = search(&pack, "timestamp-looking", None, 10).unwrap();
+        assert_eq!(response.hits[0].media_kind.as_deref(), Some("image"));
+        assert_eq!(response.hits[0].media_citation, None);
+    }
+
     #[test]
     fn note_api_reads_from_index_after_source_file_is_removed() {
         let dir = tempdir().unwrap();
