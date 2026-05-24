@@ -22,3 +22,10 @@ Goal: make `pack import <bundle-dir>` fail clearly and before partial restore wh
 
 - Bundle output is still a directory artifact, not a compressed archive.
 - Import frontmatter still uses compact JSON object YAML; a readability pass remains separate.
+
+## Additional hardening pass
+
+- Invalid manifest identity is rejected (`type` must be `ontopack.bundle`, `version` must be `1`).
+- Companion context files are optional only when omitted from `bundle.json`; if `markdown` or `mcp_context` is listed, the referenced file must exist.
+- `notes` means the number of JSONL note records in `context.jsonl`.
+- `assets_copied` means the number of unique `assets/...` paths referenced by note frontmatter/body and expected to be present under the bundle asset root.

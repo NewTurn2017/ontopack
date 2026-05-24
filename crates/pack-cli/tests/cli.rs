@@ -1039,6 +1039,85 @@ fn bundle_import_validates_manifest_and_context_before_restore() {
 }
 
 #[test]
+fn bundle_import_rejects_invalid_manifest_identity_and_missing_listed_companions() {
+    let dir = tempdir().unwrap();
+    let source = dir.path().join("source");
+    let restored = dir.path().join("restored");
+    let bundle = dir.path().join("bundle");
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", source.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::write(source.join("notes/a.md"), "---\ntitle: A\n---\nportable").unwrap();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&source)
+        .args(["bundle", bundle.to_str().unwrap()])
+        .assert()
+        .success();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", restored.to_str().unwrap()])
+        .assert()
+        .success();
+
+    std::fs::write(
+        bundle.join("bundle.json"),
+        r#"{"type":"not.ontopack","version":1,"context":"context.jsonl","markdown":"context.md","mcp_context":"mcp-context.json","assets":"assets","notes":1,"assets_copied":0}"#,
+    )
+    .unwrap();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&restored)
+        .args(["import", bundle.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("bundle manifest invalid type"));
+
+    std::fs::write(
+        bundle.join("bundle.json"),
+        r#"{"type":"ontopack.bundle","version":999,"context":"context.jsonl","markdown":"context.md","mcp_context":"mcp-context.json","assets":"assets","notes":1,"assets_copied":0}"#,
+    )
+    .unwrap();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&restored)
+        .args(["import", bundle.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "bundle manifest unsupported version",
+        ));
+
+    std::fs::write(
+        bundle.join("bundle.json"),
+        r#"{"type":"ontopack.bundle","version":1,"context":"context.jsonl","markdown":"context.md","mcp_context":"mcp-context.json","assets":"assets","notes":1,"assets_copied":0}"#,
+    )
+    .unwrap();
+    std::fs::remove_file(bundle.join("context.md")).unwrap();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&restored)
+        .args(["import", bundle.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("bundle markdown missing"));
+
+    std::fs::write(bundle.join("context.md"), "# restored").unwrap();
+    std::fs::remove_file(bundle.join("mcp-context.json")).unwrap();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&restored)
+        .args(["import", bundle.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("bundle mcp_context missing"));
+}
+
+#[test]
 fn bundle_import_fails_when_referenced_asset_is_missing() {
     let dir = tempdir().unwrap();
     let source = dir.path().join("source");
