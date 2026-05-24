@@ -41,6 +41,7 @@ Ontopack real test passed: realistic pack + CLI + exports + MCP + viewer APIs + 
    - `--copy-assets` 출력은 참조된 `assets/...` 파일을 보존 경로 그대로 복사해야 함
    - `pack import <context.jsonl> --format jsonl --asset-root ...`로 새 팩에 복원 후 build/search가 가능해야 함
    - `pack bundle <dir> [--archive bundle.tar.gz]` 출력은 `context.jsonl`, `context.md`, `mcp-context.json`, `bundle.json`, `assets/...`를 포함하고 `pack import <dir>` 또는 `pack import <bundle.tar.gz>`로 manifest 검증 후 복원 가능해야 함
+   - bundle restore는 asset byte equality, 기본 non-overwrite 실패, `--overwrite` 성공, missing asset failure가 partial note restore를 남기지 않는지 확인해야 함
 4. HTTP viewer API
    - `/api/search` with `type/tag/from/to/k`
    - `/api/ask`
