@@ -92,6 +92,13 @@ scripts/media-intelligence-test.sh
 
 `WHISPER_TEST_AUDIO=/path/to/speech.wav`로 전사 테스트용 음성 샘플을 바꿀 수 있습니다. 기본 경로는 ffmpeg 기반 mp4 생성/keyframe 추출만 수행하고, Whisper 모델 다운로드/경로에는 의존하지 않습니다.
 
+## 플랫폼/포터빌리티 메모
+
+- 현재 필수 자동 gate와 real smoke는 macOS에서 검증되었습니다.
+- bundle/import 저장 형식은 OS-neutral입니다. `bundle.json`과 JSONL 안의 asset path는 `assets/...` 형태의 forward-slash pack-relative path를 사용하고, import 시 Rust path join으로 대상 OS 경로에 맞춥니다.
+- `pack bundle <dir> --archive bundle.tar.gz`는 Rust `tar` + `flate2` 구현을 사용하므로 시스템 `tar`, `zip`, GNU 도구에 의존하지 않습니다.
+- Windows는 storage-format compatible 목표이지만 아직 실제 runner/로컬 provider 실행은 미검증입니다. Windows 검증 시 우선 확인할 항목은 `ffmpeg/ffprobe`, `tesseract`, `ollama`, `whisper-cli` PATH 탐지와 Python provider command 실행 방식입니다.
+
 ## 실제 임베딩 선택 테스트
 
 BGE-M3/FastEmbed 실제 경로는 모델 다운로드와 네트워크/캐시 상태에 영향을 받으므로 기본 gate에서는 제외합니다. 실제 임베딩까지 확인하려면 명시적으로 실행합니다.

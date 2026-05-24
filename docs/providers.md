@@ -72,7 +72,7 @@ Force local even when an API key exists:
 ONTOPACK_PROVIDER_MODE=local pack enrich-pending --provider-command /path/to/ontopack/scripts/providers/auto_media_worker.py --limit 1
 ```
 
-## Windows future path
+## Windows future path (documented, not yet live-verified)
 
 The provider contract is OS-neutral: an executable reads JSON from stdin and writes `EnrichmentPatch` JSON to stdout. For Windows, keep the same `pack enrich-pending --provider-command ...` command shape and install equivalents with winget/Chocolatey or native installers:
 
@@ -81,7 +81,14 @@ The provider contract is OS-neutral: an executable reads JSON from stdin and wri
 - FFmpeg Windows build in PATH for video/audio metadata/extraction.
 - whisper.cpp or another local STT executable in PATH for transcript workers; expose its model path through `WHISPER_MODEL`.
 
-No OntoPack storage format should change for Windows; only provider executable discovery/setup should vary.
+No OntoPack storage format should change for Windows; only provider executable discovery/setup should vary. The current automated gates and real Whisper proof were run on macOS. Until a Windows runner is added, Windows support should be treated as storage-format compatible but runtime-unverified.
+
+Portability notes for Windows:
+
+- OntoPack manifest and bundle asset paths intentionally use forward-slash pack-relative paths such as `assets/evidence.png`; Rust path joins normalize these for the local OS during import/export.
+- `pack bundle <dir> --archive bundle.tar.gz` is pure Rust and does not require system `tar`, `zip`, or GNU tools.
+- Provider workers are executable-path based. If Python `.py` scripts are not directly executable on Windows, invoke them through the Python launcher or a wrapper script, for example `--provider-command py --provider-arg scripts\\providers\\auto_media_worker.py`, or use a `.cmd`/`.ps1` wrapper that reads stdin and writes stdout unchanged.
+- ffmpeg/ffprobe, tesseract, ollama, and whisper binaries must be discoverable on `PATH` unless the worker is extended with explicit binary path environment variables.
 
 ## Bundled providers
 
