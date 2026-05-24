@@ -136,6 +136,15 @@ tags: [ops, hygiene]
 어떤 노트와도 연결되지 않은 유지보수 점검용 노트다.
 NOTE
 
+cat > "$PACK_DIR/notes/dangling-gap.md" <<'NOTE'
+---
+type: note
+title: 깨진 링크 점검 노트
+tags: [ops, hygiene]
+---
+이 노트는 아직 만들지 않은 [[missing-hygiene-target]]을 가리킨다.
+NOTE
+
 printf '\x89PNG\r\n' > "$PACK_DIR/evidence.png"
 (cd "$PACK_DIR" && "$PACK_BIN" add "$PACK_DIR/evidence.png" --type image >/tmp/ontopack-real-add-image.out)
 cat > "$PACK_DIR/notes/evidence-image.md" <<'NOTE'
@@ -217,6 +226,11 @@ grep -q '외톨이 노트: count=' /tmp/ontopack-real-orphans.out
 grep -q 'orphan-gap' /tmp/ontopack-real-orphans.out
 (cd "$PACK_DIR" && "$PACK_BIN" orphans --json >/tmp/ontopack-real-orphans.json)
 grep -q '"note_id": "orphan-gap"' /tmp/ontopack-real-orphans.json
+(cd "$PACK_DIR" && "$PACK_BIN" gaps >/tmp/ontopack-real-gaps.out)
+grep -q '깨진 링크: count=' /tmp/ontopack-real-gaps.out
+grep -q 'dangling-gap -> missing-hygiene-target' /tmp/ontopack-real-gaps.out
+(cd "$PACK_DIR" && "$PACK_BIN" gaps --json >/tmp/ontopack-real-gaps.json)
+grep -q '"missing_target": "missing-hygiene-target"' /tmp/ontopack-real-gaps.json
 
 echo "[5/11] portable context exports"
 (cd "$PACK_DIR" && "$PACK_BIN" export --format jsonl >/tmp/ontopack-real-export.jsonl)

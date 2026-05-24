@@ -61,6 +61,7 @@
 ## M6
 - `pack duplicates [--json]` — source-of-truth note body를 정규화해 같은 본문을 가진 중복 후보 그룹을 리포트
 - `pack orphans [--json]` — incoming/outgoing wiki link가 모두 없는 외톨이 노트를 read-only로 리포트
+- `pack gaps [--json]` — 존재하지 않는 노트 id로 향하는 깨진 wiki link를 read-only로 리포트
 
 ## 다음
 CLIP/실제 STT 같은 provider-heavy 멀티모달 확장, orphan/gap/topic-map 지식 유지보수, watcher/installer/Windows 검증.

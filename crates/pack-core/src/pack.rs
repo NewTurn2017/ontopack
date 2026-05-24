@@ -117,6 +117,14 @@ pub struct OrphanNote {
     pub asset: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LinkGap {
+    pub source_id: String,
+    pub source_title: String,
+    pub source_path: String,
+    pub missing_target: String,
+}
+
 #[derive(Serialize)]
 struct AssetSidecarFrontMatter<'a> {
     #[serde(rename = "type")]
@@ -403,6 +411,33 @@ impl Pack {
             .collect::<Vec<_>>();
         orphans.sort_by(|a, b| a.note_id.cmp(&b.note_id));
         Ok(orphans)
+    }
+
+    pub fn link_gaps(&self) -> Result<Vec<LinkGap>> {
+        let notes = self.scan_notes()?;
+        let note_ids = notes
+            .iter()
+            .map(|note| note.id.clone())
+            .collect::<BTreeSet<_>>();
+        let mut gaps = Vec::new();
+        for note in notes {
+            for target in &note.related {
+                if !note_ids.contains(target.as_str()) {
+                    gaps.push(LinkGap {
+                        source_id: note.id.clone(),
+                        source_title: note.title.clone(),
+                        source_path: relative_display(&self.root, &note.path),
+                        missing_target: target.clone(),
+                    });
+                }
+            }
+        }
+        gaps.sort_by(|a, b| {
+            a.missing_target
+                .cmp(&b.missing_target)
+                .then_with(|| a.source_id.cmp(&b.source_id))
+        });
+        Ok(gaps)
     }
 
     pub fn update_enrichment(&self, note_id: &str, patch: &EnrichmentPatch) -> Result<PathBuf> {
@@ -1268,6 +1303,25 @@ mod tests {
             .map(|note| note.note_id)
             .collect();
         assert_eq!(ids, vec!["b"]);
+    }
+
+    #[test]
+    fn link_gaps_report_missing_wikilink_targets() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(root.join("notes/a.md"), "A [[b]] [[missing]]").unwrap();
+        std::fs::write(root.join("notes/b.md"), "B [[missing]] [[other]]").unwrap();
+        let pack = Pack::open(&root).unwrap();
+
+        let gaps = pack.link_gaps().unwrap();
+        assert_eq!(gaps.len(), 3);
+        assert_eq!(gaps[0].missing_target, "missing");
+        assert_eq!(gaps[0].source_id, "a");
+        assert_eq!(gaps[0].source_path, "notes/a.md");
+        assert_eq!(gaps[1].missing_target, "missing");
+        assert_eq!(gaps[1].source_id, "b");
+        assert_eq!(gaps[2].missing_target, "other");
     }
 
     #[test]

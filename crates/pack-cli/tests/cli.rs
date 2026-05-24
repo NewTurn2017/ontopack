@@ -496,6 +496,37 @@ fn orphans_reports_unlinked_notes() {
 }
 
 #[test]
+fn gaps_reports_missing_wikilink_targets() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("p");
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", root.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::write(root.join("notes/a.md"), "A [[b]] [[missing]]").unwrap();
+    std::fs::write(root.join("notes/b.md"), "B [[missing]] [[other]]").unwrap();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["gaps"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("깨진 링크: count=3"))
+        .stdout(predicate::str::contains("a -> missing"))
+        .stdout(predicate::str::contains("b -> other"));
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["gaps", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#""missing_target": "missing""#));
+}
+
+#[test]
 fn status_and_list_report_pending_enrichment() {
     let dir = tempdir().unwrap();
     let root = dir.path().join("p");

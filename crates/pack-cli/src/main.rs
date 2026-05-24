@@ -7,7 +7,7 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 use pack_core::enrichment::EnrichmentPatch;
 use pack_core::pack::{
-    find_pack_root, AddOutcome, DuplicateGroup, OrphanNote, Pack, PackObject, PackStatus,
+    find_pack_root, AddOutcome, DuplicateGroup, LinkGap, OrphanNote, Pack, PackObject, PackStatus,
 };
 use pack_core::search::{RankSource, SearchHit};
 use serde::Deserialize;
@@ -64,6 +64,12 @@ enum Commands {
     },
     /// incoming/outgoing 링크가 없는 외톨이 노트를 찾는다
     Orphans {
+        /// JSON으로 출력한다
+        #[arg(long)]
+        json: bool,
+    },
+    /// 존재하지 않는 노트로 향하는 깨진 wiki link를 찾는다
+    Gaps {
         /// JSON으로 출력한다
         #[arg(long)]
         json: bool,
@@ -289,6 +295,16 @@ fn main() -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&orphans)?);
             } else {
                 print_orphan_notes(&orphans);
+            }
+        }
+        Commands::Gaps { json } => {
+            let root = find_pack_root(&std::env::current_dir()?)?;
+            let pack = Pack::open(&root)?;
+            let gaps = pack.link_gaps()?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&gaps)?);
+            } else {
+                print_link_gaps(&gaps);
             }
         }
         Commands::EnrichNote {
@@ -655,6 +671,20 @@ fn print_orphan_notes(orphans: &[OrphanNote]) {
             note.title,
             note.path,
             note.asset.as_deref().unwrap_or("-")
+        );
+    }
+}
+
+fn print_link_gaps(gaps: &[LinkGap]) {
+    if gaps.is_empty() {
+        println!("깨진 링크 없음");
+        return;
+    }
+    println!("깨진 링크: count={}", gaps.len());
+    for gap in gaps {
+        println!(
+            "- {} -> {} title={} path={}",
+            gap.source_id, gap.missing_target, gap.source_title, gap.source_path
         );
     }
 }
