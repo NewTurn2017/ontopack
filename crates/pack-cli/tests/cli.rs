@@ -832,6 +832,13 @@ fn import_jsonl_roundtrips_exported_context_and_assets() {
 
     assert!(restored.join("notes/board.md").exists());
     assert!(restored.join("assets/board.png").exists());
+    let restored_note = std::fs::read_to_string(restored.join("notes/board.md")).unwrap();
+    assert!(restored_note.starts_with("---\n"));
+    assert!(restored_note.contains("\ntype: image\n"));
+    assert!(restored_note.contains("title: Board\n"));
+    assert!(restored_note.contains("tags:\n- visual\n"));
+    assert!(restored_note.contains("asset: assets/board.png\n"));
+    assert!(!restored_note.contains(r#"{"type":"image""#));
     Command::cargo_bin("pack")
         .unwrap()
         .current_dir(&restored)

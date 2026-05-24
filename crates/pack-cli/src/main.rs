@@ -890,8 +890,8 @@ fn execute_import_plan(
             std::fs::create_dir_all(parent)?;
         }
         let note = format!(
-            "---\n{}\n---\n{}",
-            serde_json::to_string(&entry.frontmatter)?,
+            "---\n{}---\n{}",
+            serde_yaml::to_string(&entry.frontmatter)?,
             entry.body
         );
         std::fs::write(note_path, note)?;
