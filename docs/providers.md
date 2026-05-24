@@ -92,6 +92,15 @@ Portability notes for Windows:
 
 ## Bundled providers
 
+Before running provider-backed enrichment, inspect the local toolchain without mutating a pack:
+
+```bash
+scripts/provider-doctor.py --json
+scripts/provider-doctor.py --require fixture
+```
+
+Use `--require local` when you expect local ffprobe/tesseract/ollama tooling to be available, or `--require api` when `OPENAI_API_KEY` should be configured.
+
 ### `scripts/providers/auto_media_worker.py`
 
 Recommended entrypoint. Routes to API first when `OPENAI_API_KEY` is set, otherwise local. Override worker commands with:

@@ -267,6 +267,10 @@ missing = [item for item in required if item not in script]
 if missing:
     raise SystemExit(f'windows smoke contract missing: {missing}')
 PY
+"$ROOT/scripts/provider-doctor.py" --require fixture >/tmp/ontopack-real-provider-doctor.out
+grep -q 'provider doctor: ok=true' /tmp/ontopack-real-provider-doctor.out
+"$ROOT/scripts/provider-doctor.py" --json --require fixture >/tmp/ontopack-real-provider-doctor.json
+grep -q '"fixture": true' /tmp/ontopack-real-provider-doctor.json
 (cd "$PACK_DIR" && ONTOPACK_LOCAL_WORKER="$ROOT/scripts/providers/fixture_media_worker.py" OPENAI_API_KEY="" "$PACK_BIN" enrich-pending --provider-command "$ROOT/scripts/providers/auto_media_worker.py" --limit 1 >/tmp/ontopack-real-enrich-pending.out)
 grep -q 'processed=1' /tmp/ontopack-real-enrich-pending.out
 grep -q 'indexed=' /tmp/ontopack-real-enrich-pending.out
