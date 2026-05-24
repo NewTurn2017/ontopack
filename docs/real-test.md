@@ -97,7 +97,7 @@ scripts/media-intelligence-test.sh
 - 현재 필수 자동 gate와 real smoke는 macOS에서 검증되었습니다.
 - bundle/import 저장 형식은 OS-neutral입니다. `bundle.json`과 JSONL 안의 asset path는 `assets/...` 형태의 forward-slash pack-relative path를 사용하고, import 시 Rust path join으로 대상 OS 경로에 맞춥니다.
 - `pack bundle <dir> --archive bundle.tar.gz`는 Rust `tar` + `flate2` 구현을 사용하므로 시스템 `tar`, `zip`, GNU 도구에 의존하지 않습니다.
-- Windows는 storage-format compatible 목표이지만 아직 실제 runner/로컬 provider 실행은 미검증입니다. Windows 검증 시 우선 확인할 항목은 `ffmpeg/ffprobe`, `tesseract`, `ollama`, `whisper-cli` PATH 탐지와 Python provider command 실행 방식입니다.
+- Windows는 storage-format compatible 목표이며 `scripts/windows-smoke.ps1`가 init/build/search/doctor/export/bundle/import smoke 계약을 고정합니다. 현재 macOS gate에서는 이 PowerShell smoke를 정적으로 검증하고, Windows runner에서는 `scripts/windows-smoke.ps1 -PackBin .\\pack.exe`를 실제 실행해야 합니다. Provider 검증 시 추가 확인 항목은 `ffmpeg/ffprobe`, `tesseract`, `ollama`, `whisper-cli` PATH 탐지와 Python provider command 실행 방식입니다.
 
 ## 실제 임베딩 선택 테스트
 

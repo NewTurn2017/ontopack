@@ -251,6 +251,22 @@ assert data['StandardErrorPath'].endswith('/.pack/watch.err.log'), data
 PY
 SKIP_BUILD=1 PACK_BIN="$PACK_BIN" NOTE_COUNT=80 MEDIA_COUNT=8 REPEATS=1 WARMUP=0 P95_MAX_MS=1000 OUT_JSON=/tmp/ontopack-real-perf-smoke.json OUT_MD=/tmp/ontopack-real-perf-smoke.md "$ROOT/scripts/perf-smoke.sh" >/tmp/ontopack-real-perf-smoke.out
 grep -q 'perf smoke ok:' /tmp/ontopack-real-perf-smoke.out
+python3 - "$ROOT/scripts/windows-smoke.ps1" <<'PY'
+import pathlib, sys
+script = pathlib.Path(sys.argv[1]).read_text(encoding='utf-8')
+required = [
+    'Set-StrictMode -Version Latest',
+    '& $PackBin init $Root',
+    '& $PackBin build --no-embed',
+    '& $PackBin search "windows-smoke-keyword" --mode keyword -k 1',
+    '& $PackBin bundle $bundleDir --archive $archive',
+    '& $PackBin import $archive',
+    'Windows smoke passed',
+]
+missing = [item for item in required if item not in script]
+if missing:
+    raise SystemExit(f'windows smoke contract missing: {missing}')
+PY
 (cd "$PACK_DIR" && ONTOPACK_LOCAL_WORKER="$ROOT/scripts/providers/fixture_media_worker.py" OPENAI_API_KEY="" "$PACK_BIN" enrich-pending --provider-command "$ROOT/scripts/providers/auto_media_worker.py" --limit 1 >/tmp/ontopack-real-enrich-pending.out)
 grep -q 'processed=1' /tmp/ontopack-real-enrich-pending.out
 grep -q 'indexed=' /tmp/ontopack-real-enrich-pending.out

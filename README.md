@@ -72,6 +72,7 @@
 - `scripts/install.sh --prefix ~/.local --completion-shell zsh` — release binary를 빌드/설치하고 completion을 선택 설치
 - `scripts/install-launch-agent.sh --pack-root <pack>` — macOS LaunchAgent plist를 생성/선택 설치하여 `pack watch`를 로그인 백그라운드 작업으로 실행
 - `scripts/perf-smoke.sh` / `scripts/perf-benchmark.sh` — synthetic pack으로 viewer/API 성능 회귀를 측정하고 작은 스모크는 자동 검증
+- `scripts/windows-smoke.ps1 -PackBin .\\pack.exe` — Windows에서 init/build/search/doctor/export/bundle/import를 검증하는 PowerShell smoke
 
 ## 다음
 CLIP/실제 STT 같은 provider-heavy 멀티모달 확장, orphan/gap/topic-map 지식 유지보수, watcher/installer/Windows 검증.
