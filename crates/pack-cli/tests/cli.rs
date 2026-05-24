@@ -989,6 +989,36 @@ fn bundle_archive_imports_with_same_manifest_contract() {
 }
 
 #[test]
+fn bundle_rejects_archive_inside_bundle_directory() {
+    let dir = tempdir().unwrap();
+    let source = dir.path().join("source");
+    let bundle = dir.path().join("bundle");
+    let archive = bundle.join("bundle.tar.gz");
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", source.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::write(source.join("notes/a.md"), "---\ntitle: A\n---\nportable").unwrap();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&source)
+        .args([
+            "bundle",
+            bundle.to_str().unwrap(),
+            "--archive",
+            archive.to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "archive path must be outside bundle directory",
+        ));
+}
+
+#[test]
 fn bundle_import_validates_manifest_and_context_before_restore() {
     let dir = tempdir().unwrap();
     let source = dir.path().join("source");

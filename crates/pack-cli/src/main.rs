@@ -729,12 +729,34 @@ fn write_bundle_archive(bundle_dir: &Path, archive_path: &Path) -> Result<()> {
     {
         std::fs::create_dir_all(parent)?;
     }
+    ensure_archive_outside_bundle(bundle_dir, archive_path)?;
     let file = File::create(archive_path)?;
     let encoder = GzEncoder::new(file, Compression::default());
     let mut builder = tar::Builder::new(encoder);
     builder.append_dir_all(".", bundle_dir)?;
     let encoder = builder.into_inner()?;
     encoder.finish()?;
+    Ok(())
+}
+
+fn ensure_archive_outside_bundle(bundle_dir: &Path, archive_path: &Path) -> Result<()> {
+    let bundle_dir = bundle_dir.canonicalize()?;
+    let archive_parent = archive_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
+        .canonicalize()?;
+    let archive_abs = archive_parent.join(
+        archive_path
+            .file_name()
+            .ok_or_else(|| anyhow::anyhow!("invalid archive path: {}", archive_path.display()))?,
+    );
+    if archive_abs.starts_with(&bundle_dir) {
+        anyhow::bail!(
+            "archive path must be outside bundle directory: {}",
+            archive_path.display()
+        );
+    }
     Ok(())
 }
 
