@@ -202,6 +202,16 @@ test -s /tmp/ontopack-real-import-pack/assets/evidence.png
 (cd /tmp/ontopack-real-import-pack && "$PACK_BIN" build --no-embed >/tmp/ontopack-real-import-build.out)
 (cd /tmp/ontopack-real-import-pack && "$PACK_BIN" search "온톨로지" --mode keyword -k 3 >/tmp/ontopack-real-import-search.out)
 grep -q '#0000' /tmp/ontopack-real-import-search.out
+rm -rf /tmp/ontopack-real-bundle-pack /tmp/ontopack-real-bundle-restore
+(cd "$PACK_DIR" && "$PACK_BIN" bundle /tmp/ontopack-real-bundle-pack >/tmp/ontopack-real-bundle.out)
+grep -q 'bundle 완료:' /tmp/ontopack-real-bundle.out
+test -s /tmp/ontopack-real-bundle-pack/context.jsonl
+test -s /tmp/ontopack-real-bundle-pack/bundle.json
+test -s /tmp/ontopack-real-bundle-pack/assets/evidence.png
+"$PACK_BIN" init /tmp/ontopack-real-bundle-restore >/tmp/ontopack-real-bundle-restore-init.out
+(cd /tmp/ontopack-real-bundle-restore && "$PACK_BIN" import /tmp/ontopack-real-bundle-pack >/tmp/ontopack-real-bundle-import.out)
+grep -q 'import 완료:' /tmp/ontopack-real-bundle-import.out
+test -s /tmp/ontopack-real-bundle-restore/assets/evidence.png
 
 echo "[6/11] viewer API filtered search, including >100 distractors"
 SEARCH_JSON="$(serve_json $'GET /api/search?q=%EA%B3%B5%ED%86%B5%EC%A7%88%EB%AC%B8&type=prompt&tag=needle&from=2026-05-01&to=2026-05-31&k=1 HTTP/1.1\r\nHost: localhost\r\n\r\n')"

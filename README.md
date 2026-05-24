@@ -35,6 +35,7 @@
 - `pack search "<질의>" --mode vector|hybrid` — `real-embed` 빌드에서 BGE-M3 임베더로 vector/hybrid 검색
 - `pack export --format markdown-bundle|jsonl|mcp-context [--output 파일] [--copy-assets 디렉터리]` — UI 없이 Claude/Codex/강의 번들/다른 앱으로 넘길 수 있는 citation-ready portable context 출력. `--copy-assets`는 참조된 원본/derived media를 경로 보존 방식으로 복사
 - `pack import context.jsonl --format jsonl [--asset-root 디렉터리]` — export JSONL과 복사된 asset tree를 새 팩으로 복원
+- `pack bundle <디렉터리>` / `pack import <bundle-디렉터리>` — context JSONL, Markdown bundle, MCP context, assets, manifest를 한 portable 디렉터리 artifact로 묶고 복원
 - 검색 결과는 `[keyword|vector|hybrid] 제목  (note_id / chunk_id) snippet` 형태라 MCP/뷰어 citation에 재사용 가능
 - core에서는 `SearchHit`, `RankSource`, RRF fusion, `Pack::search_hybrid_with`를 제공하며 테스트는 fake embedder로 모델 다운로드 없이 검증
 

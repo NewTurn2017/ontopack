@@ -136,6 +136,11 @@ enum Commands {
         #[arg(long)]
         overwrite: bool,
     },
+    /// context + assets를 한 디렉터리 bundle artifact로 묶는다
+    Bundle {
+        /// bundle 출력 디렉터리
+        output: PathBuf,
+    },
     /// 로컬 HTTP 뷰어/API 서버를 시작한다
     Serve {
         /// 바인딩할 로컬 포트 (0이면 임의 포트)
@@ -374,6 +379,17 @@ fn main() -> Result<()> {
                 report.notes, report.assets
             );
         }
+        Commands::Bundle { output } => {
+            let root = find_pack_root(&std::env::current_dir()?)?;
+            let pack = Pack::open(&root)?;
+            let report = bundle_pack(&pack, &output)?;
+            println!(
+                "bundle 완료: notes={} assets={} dir={}",
+                report.notes,
+                report.assets,
+                output.display()
+            );
+        }
         Commands::Serve {
             port,
             once,
@@ -579,6 +595,39 @@ fn copy_referenced_assets(pack: &Pack, destination: &Path) -> Result<usize> {
     Ok(copied)
 }
 
+fn bundle_pack(pack: &Pack, output: &Path) -> Result<ImportReport> {
+    std::fs::create_dir_all(output)?;
+    std::fs::write(
+        output.join("context.jsonl"),
+        export_pack(pack, ExportFormatArg::Jsonl)?,
+    )?;
+    std::fs::write(
+        output.join("context.md"),
+        export_pack(pack, ExportFormatArg::MarkdownBundle)?,
+    )?;
+    std::fs::write(
+        output.join("mcp-context.json"),
+        export_pack(pack, ExportFormatArg::McpContext)?,
+    )?;
+    let assets = copy_referenced_assets(pack, output)?;
+    let notes = pack.scan_notes()?.len();
+    let manifest = json!({
+        "type": "ontopack.bundle",
+        "version": 1,
+        "context": "context.jsonl",
+        "markdown": "context.md",
+        "mcp_context": "mcp-context.json",
+        "assets": "assets",
+        "notes": notes,
+        "assets_copied": assets,
+    });
+    std::fs::write(
+        output.join("bundle.json"),
+        format!("{}\n", serde_json::to_string_pretty(&manifest)?),
+    )?;
+    Ok(ImportReport { notes, assets })
+}
+
 fn extract_asset_paths(body: &str) -> Vec<String> {
     let mut out = Vec::new();
     for token in body.split_whitespace() {
@@ -622,7 +671,15 @@ fn import_pack_context(
     overwrite: bool,
 ) -> Result<ImportReport> {
     match format {
-        ImportFormatArg::Jsonl => import_jsonl_context(root, input, asset_root, overwrite),
+        ImportFormatArg::Jsonl => {
+            if input.is_dir() {
+                let context = input.join("context.jsonl");
+                let asset_root = asset_root.unwrap_or(input);
+                import_jsonl_context(root, &context, Some(asset_root), overwrite)
+            } else {
+                import_jsonl_context(root, input, asset_root, overwrite)
+            }
+        }
     }
 }
 

@@ -847,6 +847,68 @@ fn import_jsonl_roundtrips_exported_context_and_assets() {
         .stdout(predicate::str::contains("board#0000"));
 }
 
+#[test]
+fn bundle_directory_imports_as_one_portable_artifact() {
+    let dir = tempdir().unwrap();
+    let source = dir.path().join("source");
+    let restored = dir.path().join("restored");
+    let bundle = dir.path().join("bundle");
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", source.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::write(source.join("assets/clip.mp4"), b"mp4 bytes").unwrap();
+    std::fs::write(
+        source.join("notes/clip.md"),
+        "---\ntype: video\ntitle: Clip\nasset: assets/clip.mp4\ntags: [demo]\n---\n번들 복원 가능한 영상 노트.",
+    )
+    .unwrap();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&source)
+        .args(["bundle", bundle.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("bundle 완료"));
+
+    assert!(bundle.join("context.jsonl").exists());
+    assert!(bundle.join("context.md").exists());
+    assert!(bundle.join("mcp-context.json").exists());
+    assert!(bundle.join("bundle.json").exists());
+    assert!(bundle.join("assets/clip.mp4").exists());
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", restored.to_str().unwrap()])
+        .assert()
+        .success();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&restored)
+        .args(["import", bundle.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("import 완료: notes=1 assets=1"));
+
+    assert!(restored.join("assets/clip.mp4").exists());
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&restored)
+        .args(["build", "--no-embed"])
+        .assert()
+        .success();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&restored)
+        .args(["search", "영상"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("clip#0000"));
+}
+
 #[cfg(unix)]
 fn make_executable(path: &std::path::Path) {
     use std::os::unix::fs::PermissionsExt;
