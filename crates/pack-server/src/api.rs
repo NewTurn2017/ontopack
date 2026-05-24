@@ -38,6 +38,8 @@ pub struct SearchCard {
     pub score: f64,
     pub rank_source: String,
     pub asset: Option<String>,
+    pub remote_url: Option<String>,
+    pub thumbnail_url: Option<String>,
     pub asset_url: Option<String>,
     pub media_kind: Option<String>,
     pub mime: Option<String>,
@@ -61,6 +63,8 @@ pub struct NoteDetail {
     pub tags: Vec<String>,
     pub created: Option<String>,
     pub asset: Option<String>,
+    pub remote_url: Option<String>,
+    pub thumbnail_url: Option<String>,
     pub asset_url: Option<String>,
     pub media_kind: Option<String>,
     pub mime: Option<String>,
@@ -172,6 +176,8 @@ pub struct GalleryItem {
     pub note_type: String,
     pub tags: Vec<String>,
     pub asset: Option<String>,
+    pub remote_url: Option<String>,
+    pub thumbnail_url: Option<String>,
     pub asset_url: Option<String>,
     pub media_kind: Option<String>,
     pub mime: Option<String>,
@@ -302,7 +308,12 @@ pub fn note(pack: &Pack, id: &str) -> Result<NoteDetail> {
     let Some(note) = pack.note_by_id_or_scan(id)? else {
         bail!("note not found: {id}");
     };
-    let media = media_metadata(note.asset.as_deref());
+    let media = media_metadata(
+        note.asset.as_deref(),
+        note.thumbnail_url.as_deref(),
+        note.media_kind.as_deref(),
+        note.mime.as_deref(),
+    );
     let keyframes = parse_keyframes(&note.body);
     Ok(NoteDetail {
         id: note.id,
@@ -311,6 +322,8 @@ pub fn note(pack: &Pack, id: &str) -> Result<NoteDetail> {
         tags: note.tags,
         created: note.created,
         asset: note.asset,
+        remote_url: note.remote_url,
+        thumbnail_url: note.thumbnail_url,
         asset_url: media.asset_url,
         media_kind: media.media_kind,
         mime: media.mime,
@@ -392,13 +405,20 @@ pub fn facets(pack: &Pack) -> Result<FacetsResponse> {
 pub fn gallery(pack: &Pack, note_type: Option<&str>, k: usize) -> Result<GalleryResponse> {
     let mut items = Vec::new();
     for note in pack.gallery_notes_or_scan(note_type, k)? {
-        let media = media_metadata(note.asset.as_deref());
+        let media = media_metadata(
+            note.asset.as_deref(),
+            note.thumbnail_url.as_deref(),
+            note.media_kind.as_deref(),
+            note.mime.as_deref(),
+        );
         items.push(GalleryItem {
             id: note.id,
             title: note.title,
             note_type: note.note_type,
             tags: note.tags,
             asset: note.asset,
+            remote_url: note.remote_url,
+            thumbnail_url: note.thumbnail_url,
             asset_url: media.asset_url,
             media_kind: media.media_kind,
             mime: media.mime,
@@ -465,7 +485,12 @@ pub fn capabilities_with_semantic(pack: &Pack, semantic_available: bool) -> Capa
 }
 
 fn search_card(hit: SearchHit) -> SearchCard {
-    let media = media_metadata(hit.asset.as_deref());
+    let media = media_metadata(
+        hit.asset.as_deref(),
+        hit.thumbnail_url.as_deref(),
+        hit.media_kind.as_deref(),
+        hit.mime.as_deref(),
+    );
     let media_citation = media_citation_for_hit(
         media.media_kind.as_deref(),
         media.asset_url.as_deref(),
@@ -481,6 +506,8 @@ fn search_card(hit: SearchHit) -> SearchCard {
         score: hit.score,
         rank_source: rank_source_label(hit.rank_source).to_string(),
         asset: hit.asset,
+        remote_url: hit.remote_url,
+        thumbnail_url: hit.thumbnail_url,
         asset_url: media.asset_url,
         media_kind: media.media_kind,
         mime: media.mime,
@@ -494,19 +521,42 @@ struct MediaMetadata {
     mime: Option<String>,
 }
 
-fn media_metadata(asset: Option<&str>) -> MediaMetadata {
-    let Some(asset) = asset else {
+fn media_metadata(
+    asset: Option<&str>,
+    thumbnail_url: Option<&str>,
+    media_kind: Option<&str>,
+    mime: Option<&str>,
+) -> MediaMetadata {
+    if let Some(asset) = asset {
+        let mime = mime.unwrap_or_else(|| mime_for_asset(asset)).to_string();
         return MediaMetadata {
-            asset_url: None,
-            media_kind: None,
-            mime: None,
+            asset_url: asset_url(asset),
+            media_kind: Some(
+                media_kind
+                    .unwrap_or_else(|| media_kind_for_mime(&mime))
+                    .to_string(),
+            ),
+            mime: Some(mime),
         };
-    };
-    let mime = mime_for_asset(asset).to_string();
+    }
+    if let Some(thumbnail_url) = thumbnail_url {
+        let mime = mime
+            .unwrap_or_else(|| mime_for_url(thumbnail_url))
+            .to_string();
+        return MediaMetadata {
+            asset_url: Some(thumbnail_url.to_string()),
+            media_kind: Some(
+                media_kind
+                    .unwrap_or_else(|| media_kind_for_mime(&mime))
+                    .to_string(),
+            ),
+            mime: Some(mime),
+        };
+    }
     MediaMetadata {
-        asset_url: asset_url(asset),
-        media_kind: Some(media_kind_for_mime(&mime).to_string()),
-        mime: Some(mime),
+        asset_url: None,
+        media_kind: media_kind.map(str::to_string),
+        mime: mime.map(str::to_string),
     }
 }
 
@@ -628,13 +678,16 @@ fn parse_keyframe_line(line: &str) -> Option<MediaKeyframe> {
 }
 
 pub fn mime_for_asset(asset: &str) -> &'static str {
-    match asset
-        .rsplit('.')
-        .next()
-        .unwrap_or("")
-        .to_ascii_lowercase()
-        .as_str()
-    {
+    mime_for_extension(asset.rsplit('.').next().unwrap_or(""))
+}
+
+fn mime_for_url(url: &str) -> &'static str {
+    let path = url.split(['?', '#']).next().unwrap_or(url);
+    mime_for_extension(path.rsplit('.').next().unwrap_or(""))
+}
+
+fn mime_for_extension(ext: &str) -> &'static str {
+    match ext.to_ascii_lowercase().as_str() {
         "png" => "image/png",
         "jpg" | "jpeg" => "image/jpeg",
         "webp" => "image/webp",
@@ -939,6 +992,64 @@ common term",
         assert_eq!(response.tags, vec!["gallery", "hook", "youtube"]);
         assert_eq!(response.created_min.as_deref(), Some("2026-01-01"));
         assert_eq!(response.created_max.as_deref(), Some("2026-03-01"));
+    }
+
+    #[test]
+    fn gallery_api_returns_remote_thumbnail_notes() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(
+            root.join("notes/remote.md"),
+            "---
+type: video
+title: Remote Clip
+remote_url: https://archive.org/details/example
+thumbnail_url: https://archive.org/services/img/example
+media_kind: image
+mime: image/jpeg
+tags: [gallery]
+---
+원격 썸네일로 보이는 영상",
+        )
+        .unwrap();
+        let pack = Pack::open(&root).unwrap();
+        pack.build_index().unwrap();
+
+        let gallery_response = gallery(&pack, Some("video"), 10).unwrap();
+        assert_eq!(gallery_response.items.len(), 1);
+        assert_eq!(gallery_response.items[0].note_type, "video");
+        assert_eq!(gallery_response.items[0].asset, None);
+        assert_eq!(
+            gallery_response.items[0].asset_url.as_deref(),
+            Some("https://archive.org/services/img/example")
+        );
+        assert_eq!(
+            gallery_response.items[0].remote_url.as_deref(),
+            Some("https://archive.org/details/example")
+        );
+        assert_eq!(
+            gallery_response.items[0].thumbnail_url.as_deref(),
+            Some("https://archive.org/services/img/example")
+        );
+        assert_eq!(
+            gallery_response.items[0].media_kind.as_deref(),
+            Some("image")
+        );
+        assert_eq!(
+            gallery_response.items[0].mime.as_deref(),
+            Some("image/jpeg")
+        );
+
+        let search_response = search(&pack, "원격", None, 10).unwrap();
+        assert_eq!(
+            search_response.hits[0].asset_url.as_deref(),
+            Some("https://archive.org/services/img/example")
+        );
+        assert_eq!(
+            search_response.hits[0].remote_url.as_deref(),
+            Some("https://archive.org/details/example")
+        );
     }
 
     #[test]

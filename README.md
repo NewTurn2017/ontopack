@@ -99,6 +99,38 @@ Live Windows validation is intentionally separated so it can be run on your Para
 
 ---
 
+## Visible ontology pack smoke · public web metadata
+
+To generate a visually inspectable test pack with 100 prompt records, 100 image records, and 100 video records from public web APIs without downloading original media assets:
+
+```bash
+cargo build -p pack-cli
+python3 scripts/visible-ontology-pack.py \
+  --limit-each 100 \
+  --no-download-assets \
+  --output /tmp/ontopack-visible-live \
+  --pack-bin "$PWD/target/debug/pack" \
+  --build
+cd /tmp/ontopack-visible-live
+/Users/genie/dev/ontopack/target/debug/pack open --no-browser --print-url
+```
+
+The runner writes Markdown notes plus `.pack/provenance/*.jsonl`. Search, gallery, and graph APIs use `remote_url`, `thumbnail_url`, `media_kind`, and `mime` frontmatter so the viewer can show remote previews while keeping original downloads opt-in for future ingest commands.
+
+For an offline deterministic smoke with the same 100/100/100 shape:
+
+```bash
+python3 scripts/visible-ontology-pack.py \
+  --fixture --limit-each 100 --no-download-assets \
+  --output /tmp/ontopack-visible-fixture \
+  --pack-bin "$PWD/target/debug/pack" \
+  --build
+```
+
+See [`docs/test-results/2026-05-25-visible-ontology-pack-g001.md`](docs/test-results/2026-05-25-visible-ontology-pack-g001.md) for the verified live run evidence.
+
+---
+
 ## 5-minute tutorial · 한국어
 
 ### 1. 새 팩 만들기

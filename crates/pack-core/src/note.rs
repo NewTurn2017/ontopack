@@ -13,6 +13,10 @@ pub struct Note {
     pub tags: Vec<String>,
     pub created: Option<String>,
     pub asset: Option<String>,
+    pub remote_url: Option<String>,
+    pub thumbnail_url: Option<String>,
+    pub media_kind: Option<String>,
+    pub mime: Option<String>,
     pub related: Vec<String>,
     pub body: String,
     pub mtime: i64,
@@ -28,6 +32,10 @@ impl Note {
         self.tags.hash(&mut hasher);
         self.created.hash(&mut hasher);
         self.asset.hash(&mut hasher);
+        self.remote_url.hash(&mut hasher);
+        self.thumbnail_url.hash(&mut hasher);
+        self.media_kind.hash(&mut hasher);
+        self.mime.hash(&mut hasher);
         self.related.hash(&mut hasher);
         self.body.hash(&mut hasher);
         format!("{:016x}", hasher.finish())
@@ -42,6 +50,10 @@ struct FrontMatter {
     tags: Option<Vec<String>>,
     created: Option<String>,
     asset: Option<String>,
+    remote_url: Option<String>,
+    thumbnail_url: Option<String>,
+    media_kind: Option<String>,
+    mime: Option<String>,
     related: Option<Vec<String>>,
 }
 
@@ -110,6 +122,10 @@ pub fn parse_str(id: &str, raw: &str) -> Result<Note> {
         tags: fm.tags.unwrap_or_default(),
         created: fm.created,
         asset: fm.asset,
+        remote_url: fm.remote_url,
+        thumbnail_url: fm.thumbnail_url,
+        media_kind: fm.media_kind,
+        mime: fm.mime,
         related,
         body: body.to_string(),
         mtime: 0,

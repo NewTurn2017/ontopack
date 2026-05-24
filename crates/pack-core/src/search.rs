@@ -23,6 +23,10 @@ pub struct SearchHit {
     pub snippet: String,
     pub path: String,
     pub asset: Option<String>,
+    pub remote_url: Option<String>,
+    pub thumbnail_url: Option<String>,
+    pub media_kind: Option<String>,
+    pub mime: Option<String>,
     /// Higher is better for SearchHit/RRF results.
     pub score: f64,
     pub rank_source: RankSource,
@@ -120,6 +124,10 @@ mod tests {
             snippet: format!("{note_id} snippet"),
             path: format!("notes/{note_id}.md"),
             asset: None,
+            remote_url: None,
+            thumbnail_url: None,
+            media_kind: None,
+            mime: None,
             score: 0.0,
             rank_source,
         }

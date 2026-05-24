@@ -236,7 +236,7 @@ impl Pack {
         }
         let mut items = Vec::new();
         for note in self.scan_notes()? {
-            if note.asset.is_none()
+            if (note.asset.is_none() && note.thumbnail_url.is_none())
                 || note_type.is_some_and(|note_type| note.note_type != note_type)
             {
                 continue;

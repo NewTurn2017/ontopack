@@ -19,6 +19,10 @@ pub struct VectorChunkHit {
     pub text: String,
     pub path: String,
     pub asset: Option<String>,
+    pub remote_url: Option<String>,
+    pub thumbnail_url: Option<String>,
+    pub media_kind: Option<String>,
+    pub mime: Option<String>,
     pub distance: f32,
 }
 
@@ -38,6 +42,10 @@ CREATE TABLE IF NOT EXISTS notes (
   tags    TEXT NOT NULL,
   created TEXT,
   asset   TEXT,
+  remote_url    TEXT,
+  thumbnail_url TEXT,
+  media_kind    TEXT,
+  mime          TEXT,
   body    TEXT NOT NULL,
   mtime   INTEGER NOT NULL,
   hash    TEXT NOT NULL
@@ -190,13 +198,15 @@ impl Index {
         let (where_clause, mut params) = keyword_filter_where_clause(filters)?;
         let sql = format!(
             "WITH ranked AS (
-               SELECT n.id, n.title, n.type, n.path, n.asset, bm25(notes_fts) AS score
+               SELECT n.id, n.title, n.type, n.path, n.asset, n.remote_url,
+                      n.thumbnail_url, n.media_kind, n.mime, bm25(notes_fts) AS score
                FROM notes_fts JOIN notes n ON n.id = notes_fts.id
                WHERE notes_fts MATCH ? {where_clause}
                ORDER BY score
                LIMIT ?
              )
-             SELECT id, chunk_id, title, type, text, path, asset, score
+             SELECT id, chunk_id, title, type, text, path, asset, remote_url,
+                    thumbnail_url, media_kind, mime, score
              FROM (
                SELECT
                  ranked.id,
@@ -206,6 +216,10 @@ impl Index {
                  c.text,
                  ranked.path,
                  ranked.asset,
+                 ranked.remote_url,
+                 ranked.thumbnail_url,
+                 ranked.media_kind,
+                 ranked.mime,
                  ranked.score,
                  row_number() OVER (
                    PARTITION BY ranked.id
@@ -222,7 +236,7 @@ impl Index {
         params.push(Value::Text(snippet_match_pattern(query)));
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params_from_iter(params.iter()), |r| {
-            let score: f64 = r.get(7)?;
+            let score: f64 = r.get(11)?;
             Ok(crate::search::SearchHit {
                 note_id: r.get(0)?,
                 chunk_id: r.get(1)?,
@@ -231,6 +245,10 @@ impl Index {
                 snippet: r.get(4)?,
                 path: r.get(5)?,
                 asset: r.get(6)?,
+                remote_url: r.get(7)?,
+                thumbnail_url: r.get(8)?,
+                media_kind: r.get(9)?,
+                mime: r.get(10)?,
                 score: -score,
                 rank_source: crate::search::RankSource::Keyword,
             })
@@ -305,7 +323,8 @@ impl Index {
                FROM vec_chunks
                WHERE embedding MATCH ?1 AND k = ?2
              )
-             SELECT c.id, c.note_id, n.title, n.type, c.text, n.path, n.asset, matches.distance
+             SELECT c.id, c.note_id, n.title, n.type, c.text, n.path, n.asset,
+                    n.remote_url, n.thumbnail_url, n.media_kind, n.mime, matches.distance
              FROM matches
              JOIN chunk_embedding_map m ON m.rowid = matches.rowid
              JOIN chunks c ON c.id = m.chunk_id
@@ -321,7 +340,11 @@ impl Index {
                 text: r.get(4)?,
                 path: r.get(5)?,
                 asset: r.get(6)?,
-                distance: r.get(7)?,
+                remote_url: r.get(7)?,
+                thumbnail_url: r.get(8)?,
+                media_kind: r.get(9)?,
+                mime: r.get(10)?,
+                distance: r.get(11)?,
             })
         })?;
         let mut out = Vec::new();
@@ -348,6 +371,10 @@ impl Index {
                 snippet: hit.text,
                 path: hit.path,
                 asset: hit.asset,
+                remote_url: hit.remote_url,
+                thumbnail_url: hit.thumbnail_url,
+                media_kind: hit.media_kind,
+                mime: hit.mime,
                 score: 1.0 - f64::from(hit.distance),
                 rank_source: crate::search::RankSource::Vector,
             })
@@ -356,7 +383,8 @@ impl Index {
 
     pub fn all_notes(&self) -> Result<Vec<Note>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, type, title, tags, created, asset, body, mtime
+            "SELECT id, path, type, title, tags, created, asset, remote_url, thumbnail_url,
+                    media_kind, mime, body, mtime
              FROM notes
              ORDER BY id",
         )?;
@@ -374,7 +402,8 @@ impl Index {
         let mut note = self
             .conn
             .query_row(
-                "SELECT id, path, type, title, tags, created, asset, body, mtime
+                "SELECT id, path, type, title, tags, created, asset, remote_url, thumbnail_url,
+                        media_kind, mime, body, mtime
                  FROM notes
                  WHERE id = ?1",
                 [id],
@@ -389,9 +418,10 @@ impl Index {
 
     pub fn gallery_notes(&self, note_type: Option<&str>, k: usize) -> Result<Vec<Note>> {
         let mut sql = String::from(
-            "SELECT id, path, type, title, tags, created, asset, body, mtime
+            "SELECT id, path, type, title, tags, created, asset, remote_url, thumbnail_url,
+                    media_kind, mime, body, mtime
              FROM notes
-             WHERE asset IS NOT NULL",
+             WHERE asset IS NOT NULL OR thumbnail_url IS NOT NULL",
         );
         let mut values = Vec::new();
         if let Some(note_type) = note_type {
@@ -579,9 +609,13 @@ fn note_from_row(r: &Row<'_>) -> rusqlite::Result<Note> {
         tags,
         created: r.get(5)?,
         asset: r.get(6)?,
+        remote_url: r.get(7)?,
+        thumbnail_url: r.get(8)?,
+        media_kind: r.get(9)?,
+        mime: r.get(10)?,
         related: Vec::new(),
-        body: r.get(7)?,
-        mtime: r.get(8)?,
+        body: r.get(11)?,
+        mtime: r.get(12)?,
     })
 }
 
@@ -693,7 +727,9 @@ fn reset_legacy_derived_schema_if_needed(conn: &Connection) -> Result<()> {
     }
     let has_hash = table_has_column(conn, "notes", "hash")?;
     let has_chunks = table_exists(conn, "chunks")?;
-    if has_hash && has_chunks {
+    let has_thumbnail_url = table_has_column(conn, "notes", "thumbnail_url")?;
+    let has_remote_url = table_has_column(conn, "notes", "remote_url")?;
+    if has_hash && has_chunks && has_thumbnail_url && has_remote_url {
         return Ok(());
     }
     conn.execute_batch(
@@ -755,8 +791,9 @@ fn insert_note_rows(tx: &Transaction<'_>, note: &Note, hash: &str) -> Result<()>
     let tags_json = serde_json::to_string(&note.tags)?;
     let tags_text = note.tags.join(" ");
     tx.execute(
-        "INSERT INTO notes (id, path, type, title, tags, created, asset, body, mtime, hash)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        "INSERT INTO notes (id, path, type, title, tags, created, asset, remote_url, thumbnail_url,
+                            media_kind, mime, body, mtime, hash)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         rusqlite::params![
             note.id,
             note.path.to_string_lossy(),
@@ -765,6 +802,10 @@ fn insert_note_rows(tx: &Transaction<'_>, note: &Note, hash: &str) -> Result<()>
             tags_json,
             note.created,
             note.asset,
+            note.remote_url,
+            note.thumbnail_url,
+            note.media_kind,
+            note.mime,
             note.body,
             note.mtime,
             hash,
@@ -1128,7 +1169,7 @@ mod tests {
         let mut idx = Index::open_in_memory().unwrap();
         let mut image = parse_str(
             "image",
-            "---\ntype: image\ntitle: Image\ntags: [gallery, visual]\ncreated: 2026-05-20\nasset: assets/image.png\nrelated: [prompt]\n---\n캡션",
+            "---\ntype: image\ntitle: Image\ntags: [gallery, visual]\ncreated: 2026-05-20\nthumbnail_url: https://example.test/thumb.jpg\nremote_url: https://example.test/image\nmedia_kind: image\nmime: image/jpeg\nrelated: [prompt]\n---\n캡션",
         )
         .unwrap();
         image.path = "notes/image.md".into();
@@ -1142,6 +1183,16 @@ mod tests {
 
         let note = idx.note_by_id("image").unwrap().unwrap();
         assert_eq!(note.title, "Image");
+        assert_eq!(
+            note.remote_url.as_deref(),
+            Some("https://example.test/image")
+        );
+        assert_eq!(
+            note.thumbnail_url.as_deref(),
+            Some("https://example.test/thumb.jpg")
+        );
+        assert_eq!(note.media_kind.as_deref(), Some("image"));
+        assert_eq!(note.mime.as_deref(), Some("image/jpeg"));
         assert_eq!(note.related, vec!["prompt"]);
 
         let gallery = idx.gallery_notes(Some("image"), 10).unwrap();
