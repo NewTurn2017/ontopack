@@ -235,6 +235,20 @@ rm -rf /tmp/ontopack-real-install
 grep -q 'installed pack:' /tmp/ontopack-real-install.out
 test -x /tmp/ontopack-real-install/bin/pack
 grep -q '#compdef pack' /tmp/ontopack-real-install/share/zsh/site-functions/_pack
+"$ROOT/scripts/install-launch-agent.sh" --pack-root "$PACK_DIR" --pack-bin /tmp/ontopack-real-install/bin/pack --label com.ontopack.real-test --interval-ms 1200 --output /tmp/ontopack-real-launch-agent.plist >/tmp/ontopack-real-launch-agent.out
+grep -q 'wrote launch agent plist:' /tmp/ontopack-real-launch-agent.out
+python3 - /tmp/ontopack-real-launch-agent.plist "$PACK_DIR" <<'PY'
+import os, plistlib, sys
+plist_path, pack_dir = sys.argv[1], sys.argv[2]
+with open(plist_path, 'rb') as f:
+    data = plistlib.load(f)
+assert data['Label'] == 'com.ontopack.real-test', data
+assert data['ProgramArguments'] == ['/tmp/ontopack-real-install/bin/pack', 'watch', '--interval-ms', '1200'], data
+assert data['WorkingDirectory'] == os.path.normpath(pack_dir), data
+assert data['RunAtLoad'] is True and data['KeepAlive'] is True, data
+assert data['StandardOutPath'].endswith('/.pack/watch.out.log'), data
+assert data['StandardErrorPath'].endswith('/.pack/watch.err.log'), data
+PY
 (cd "$PACK_DIR" && ONTOPACK_LOCAL_WORKER="$ROOT/scripts/providers/fixture_media_worker.py" OPENAI_API_KEY="" "$PACK_BIN" enrich-pending --provider-command "$ROOT/scripts/providers/auto_media_worker.py" --limit 1 >/tmp/ontopack-real-enrich-pending.out)
 grep -q 'processed=1' /tmp/ontopack-real-enrich-pending.out
 grep -q 'indexed=' /tmp/ontopack-real-enrich-pending.out
