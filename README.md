@@ -67,6 +67,7 @@
 
 ## M7
 - `pack watch [--once] [--interval-ms N]` — `_inbox` 처리, 증분 인덱싱, object manifest 갱신을 폴링 루프로 실행
+- `pack doctor [--json]` — 실행 파일, pack root, 필수 디렉터리, index 상태를 설치/운영 전 점검
 
 ## 다음
 CLIP/실제 STT 같은 provider-heavy 멀티모달 확장, orphan/gap/topic-map 지식 유지보수, watcher/installer/Windows 검증.

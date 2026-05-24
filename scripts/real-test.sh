@@ -220,6 +220,11 @@ grep -q 'enrichment 업데이트' /tmp/ontopack-real-enrich.out
 (cd "$PACK_DIR" && "$PACK_BIN" build --incremental --no-embed >/tmp/ontopack-real-build-enriched.out)
 (cd "$PACK_DIR" && "$PACK_BIN" status >/tmp/ontopack-real-status-after.out)
 grep -q 'done_enrichment=1' /tmp/ontopack-real-status-after.out
+(cd "$PACK_DIR" && "$PACK_BIN" doctor >/tmp/ontopack-real-doctor.out)
+grep -q 'doctor: ok=true' /tmp/ontopack-real-doctor.out
+grep -q -- '- ok index' /tmp/ontopack-real-doctor.out
+(cd "$PACK_DIR" && "$PACK_BIN" doctor --json >/tmp/ontopack-real-doctor.json)
+grep -q '"ok": true' /tmp/ontopack-real-doctor.json
 (cd "$PACK_DIR" && ONTOPACK_LOCAL_WORKER="$ROOT/scripts/providers/fixture_media_worker.py" OPENAI_API_KEY="" "$PACK_BIN" enrich-pending --provider-command "$ROOT/scripts/providers/auto_media_worker.py" --limit 1 >/tmp/ontopack-real-enrich-pending.out)
 grep -q 'processed=1' /tmp/ontopack-real-enrich-pending.out
 grep -q 'indexed=' /tmp/ontopack-real-enrich-pending.out

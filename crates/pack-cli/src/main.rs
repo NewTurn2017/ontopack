@@ -12,6 +12,7 @@ use pack_core::pack::{
 };
 use pack_core::search::{RankSource, SearchHit};
 use serde::Deserialize;
+use serde::Serialize;
 use serde_json::json;
 use std::fs::File;
 use std::io::Write;
@@ -148,6 +149,12 @@ enum Commands {
         /// 폴링 간격(ms)
         #[arg(long, default_value_t = 1000)]
         interval_ms: u64,
+    },
+    /// 설치/팩 상태를 진단한다
+    Doctor {
+        /// JSON으로 출력한다
+        #[arg(long)]
+        json: bool,
     },
     /// 실제 임베딩 모델로 chunks 벡터 인덱스를 빌드한다
     Embed {
@@ -457,6 +464,14 @@ fn main() -> Result<()> {
                 std::thread::sleep(Duration::from_millis(interval_ms.max(100)));
             }
         }
+        Commands::Doctor { json } => {
+            let report = doctor_report()?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                print_doctor_report(&report);
+            }
+        }
         Commands::Embed { skip_build } => {
             let root = find_pack_root(&std::env::current_dir()?)?;
             let pack = Pack::open(&root)?;
@@ -602,6 +617,91 @@ fn server_state(pack: Pack, semantic: bool) -> Result<pack_server::http::ServerS
 struct EnrichPendingReport {
     processed: usize,
     skipped: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct DoctorCheck {
+    name: String,
+    ok: bool,
+    detail: String,
+}
+
+#[derive(Debug, Serialize)]
+struct DoctorReport {
+    ok: bool,
+    executable: String,
+    cwd: String,
+    pack_root: Option<String>,
+    checks: Vec<DoctorCheck>,
+}
+
+fn doctor_report() -> Result<DoctorReport> {
+    let cwd = std::env::current_dir()?;
+    let executable = std::env::current_exe()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|_| "unknown".to_string());
+    let pack_root = find_pack_root(&cwd).ok();
+    let mut checks = Vec::new();
+    checks.push(DoctorCheck {
+        name: "executable".to_string(),
+        ok: executable != "unknown",
+        detail: executable.clone(),
+    });
+    match &pack_root {
+        Some(root) => {
+            checks.push(DoctorCheck {
+                name: "pack_root".to_string(),
+                ok: true,
+                detail: root.display().to_string(),
+            });
+            for rel in ["pack.toml", "notes", "assets", "_inbox", ".pack"] {
+                let path = root.join(rel);
+                checks.push(DoctorCheck {
+                    name: rel.to_string(),
+                    ok: path.exists(),
+                    detail: path.display().to_string(),
+                });
+            }
+            let index_path = root.join(".pack/index.db");
+            checks.push(DoctorCheck {
+                name: "index".to_string(),
+                ok: index_path.exists(),
+                detail: if index_path.exists() {
+                    index_path.display().to_string()
+                } else {
+                    format!("{} (run: pack build --incremental)", index_path.display())
+                },
+            });
+        }
+        None => checks.push(DoctorCheck {
+            name: "pack_root".to_string(),
+            ok: false,
+            detail: "pack.toml not found from current directory upward".to_string(),
+        }),
+    }
+    let ok = checks.iter().all(|check| check.ok);
+    Ok(DoctorReport {
+        ok,
+        executable,
+        cwd: cwd.display().to_string(),
+        pack_root: pack_root.map(|root| root.display().to_string()),
+        checks,
+    })
+}
+
+fn print_doctor_report(report: &DoctorReport) {
+    println!("doctor: ok={}", report.ok);
+    println!("executable={}", report.executable);
+    println!("cwd={}", report.cwd);
+    println!("pack_root={}", report.pack_root.as_deref().unwrap_or("-"));
+    for check in &report.checks {
+        println!(
+            "- {} {} {}",
+            if check.ok { "ok" } else { "fail" },
+            check.name,
+            check.detail
+        );
+    }
 }
 
 fn enrich_pending_with_command(

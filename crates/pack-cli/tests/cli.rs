@@ -380,6 +380,43 @@ fn watch_once_processes_inbox_and_incrementally_indexes() {
 }
 
 #[test]
+fn doctor_reports_pack_health_without_mutating() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("p");
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", root.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::write(root.join("notes/health.md"), "health check").unwrap();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["build", "--incremental"])
+        .assert()
+        .success();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["doctor"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("doctor: ok=true"))
+        .stdout(predicate::str::contains("pack_root="))
+        .stdout(predicate::str::contains("- ok index"));
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["doctor", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#""ok": true"#))
+        .stdout(predicate::str::contains(r#""pack_root""#));
+}
+
+#[test]
 fn serve_once_prints_local_url_and_handles_one_request() {
     let dir = tempdir().unwrap();
     let root = dir.path().join("p");
