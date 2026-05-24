@@ -39,6 +39,7 @@ Ontopack real test passed: realistic pack + CLI + exports + MCP + viewer APIs + 
    - `pack export --format mcp-context`
    - 모든 출력은 `note:<id>` citation과 asset path를 포함해야 함
    - `--copy-assets` 출력은 참조된 `assets/...` 파일을 보존 경로 그대로 복사해야 함
+   - `pack import <context.jsonl> --format jsonl --asset-root ...`로 새 팩에 복원 후 build/search가 가능해야 함
 4. HTTP viewer API
    - `/api/search` with `type/tag/from/to/k`
    - `/api/ask`

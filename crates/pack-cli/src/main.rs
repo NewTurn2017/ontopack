@@ -122,6 +122,20 @@ enum Commands {
         #[arg(long)]
         copy_assets: Option<PathBuf>,
     },
+    /// portable JSONL context를 현재 팩으로 불러온다
+    Import {
+        /// `pack export --format jsonl`로 만든 파일
+        input: PathBuf,
+        /// 입력 형식
+        #[arg(long, value_enum, default_value_t = ImportFormatArg::Jsonl)]
+        format: ImportFormatArg,
+        /// `pack export --copy-assets`로 만든 asset root 디렉터리
+        #[arg(long)]
+        asset_root: Option<PathBuf>,
+        /// 기존 note/asset 파일이 있으면 덮어쓴다
+        #[arg(long)]
+        overwrite: bool,
+    },
     /// 로컬 HTTP 뷰어/API 서버를 시작한다
     Serve {
         /// 바인딩할 로컬 포트 (0이면 임의 포트)
@@ -160,6 +174,11 @@ enum ExportFormatArg {
     MarkdownBundle,
     Jsonl,
     McpContext,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum ImportFormatArg {
+    Jsonl,
 }
 
 fn main() -> Result<()> {
@@ -340,6 +359,20 @@ fn main() -> Result<()> {
                     eprintln!("{message}");
                 }
             }
+        }
+        Commands::Import {
+            input,
+            format,
+            asset_root,
+            overwrite,
+        } => {
+            let root = find_pack_root(&std::env::current_dir()?)?;
+            let report =
+                import_pack_context(&root, &input, format, asset_root.as_deref(), overwrite)?;
+            println!(
+                "import 완료: notes={} assets={}",
+                report.notes, report.assets
+            );
         }
         Commands::Serve {
             port,
@@ -574,6 +607,161 @@ fn ensure_safe_asset_path(asset: &str) -> Result<()> {
         }
     }
     Ok(())
+}
+
+struct ImportReport {
+    notes: usize,
+    assets: usize,
+}
+
+fn import_pack_context(
+    root: &Path,
+    input: &Path,
+    format: ImportFormatArg,
+    asset_root: Option<&Path>,
+    overwrite: bool,
+) -> Result<ImportReport> {
+    match format {
+        ImportFormatArg::Jsonl => import_jsonl_context(root, input, asset_root, overwrite),
+    }
+}
+
+fn import_jsonl_context(
+    root: &Path,
+    input: &Path,
+    asset_root: Option<&Path>,
+    overwrite: bool,
+) -> Result<ImportReport> {
+    let raw = std::fs::read_to_string(input)?;
+    let mut notes = 0usize;
+    let mut assets = std::collections::BTreeSet::new();
+    for (idx, line) in raw.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let value: serde_json::Value = serde_json::from_str(line)
+            .map_err(|err| anyhow::anyhow!("invalid jsonl line {}: {err}", idx + 1))?;
+        let note_id = json_string(&value, "note_id")?;
+        ensure_safe_note_id(&note_id)?;
+        let note_path = root.join("notes").join(format!("{note_id}.md"));
+        if note_path.exists() && !overwrite {
+            anyhow::bail!("import note already exists: {note_id}");
+        }
+        let body = json_string(&value, "body")?;
+        let asset_path = json_optional_string(&value, "asset_path")?;
+        if let Some(asset) = &asset_path {
+            ensure_safe_asset_path(asset)?;
+            assets.insert(asset.clone());
+        }
+        for asset in extract_asset_paths(&body) {
+            ensure_safe_asset_path(&asset)?;
+            assets.insert(asset);
+        }
+
+        let mut frontmatter = serde_json::Map::new();
+        frontmatter.insert(
+            "type".to_string(),
+            json!(json_optional_string(&value, "type")?.unwrap_or_else(|| "note".to_string())),
+        );
+        frontmatter.insert(
+            "title".to_string(),
+            json!(json_optional_string(&value, "title")?.unwrap_or_else(|| note_id.clone())),
+        );
+        if let Some(tags) = json_string_array(&value, "tags")? {
+            frontmatter.insert("tags".to_string(), json!(tags));
+        }
+        if let Some(created) = json_optional_string(&value, "created")? {
+            frontmatter.insert("created".to_string(), json!(created));
+        }
+        if let Some(asset) = asset_path {
+            frontmatter.insert("asset".to_string(), json!(asset));
+        }
+        if let Some(related) = json_string_array(&value, "related")? {
+            frontmatter.insert("related".to_string(), json!(related));
+        }
+
+        if let Some(parent) = note_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let note = format!(
+            "---\n{}\n---\n{}",
+            serde_json::to_string(&frontmatter)?,
+            body
+        );
+        std::fs::write(note_path, note)?;
+        notes += 1;
+    }
+
+    let mut copied_assets = 0usize;
+    if let Some(asset_root) = asset_root {
+        for asset in &assets {
+            let source = asset_root.join(asset);
+            if !source.is_file() {
+                anyhow::bail!("import asset missing: {asset}");
+            }
+            let target = root.join(asset);
+            if target.exists() && !overwrite {
+                anyhow::bail!("import asset already exists: {asset}");
+            }
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::copy(source, target)?;
+            copied_assets += 1;
+        }
+    }
+
+    Ok(ImportReport {
+        notes,
+        assets: copied_assets,
+    })
+}
+
+fn ensure_safe_note_id(note_id: &str) -> Result<()> {
+    if note_id.is_empty() {
+        anyhow::bail!("unsafe import note id: empty");
+    }
+    let path = Path::new(note_id);
+    if path.is_absolute() {
+        anyhow::bail!("unsafe import note id: {note_id}");
+    }
+    for component in path.components() {
+        match component {
+            std::path::Component::Normal(_) => {}
+            _ => anyhow::bail!("unsafe import note id: {note_id}"),
+        }
+    }
+    Ok(())
+}
+
+fn json_string(value: &serde_json::Value, key: &str) -> Result<String> {
+    json_optional_string(value, key)?.ok_or_else(|| anyhow::anyhow!("missing string field: {key}"))
+}
+
+fn json_optional_string(value: &serde_json::Value, key: &str) -> Result<Option<String>> {
+    match value.get(key) {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::String(s)) => Ok(Some(s.clone())),
+        _ => anyhow::bail!("expected string field: {key}"),
+    }
+}
+
+fn json_string_array(value: &serde_json::Value, key: &str) -> Result<Option<Vec<String>>> {
+    match value.get(key) {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::Array(items)) => {
+            let mut out = Vec::new();
+            for item in items {
+                let Some(s) = item.as_str() else {
+                    anyhow::bail!("expected string array field: {key}");
+                };
+                out.push(s.to_string());
+            }
+            Ok(Some(out))
+        }
+        _ => anyhow::bail!("expected string array field: {key}"),
+    }
 }
 
 fn export_markdown_bundle(pack: &Pack, notes: &[pack_core::note::Note]) -> Result<String> {

@@ -775,6 +775,78 @@ fn export_can_copy_referenced_assets_for_portable_bundle() {
         .exists());
 }
 
+#[test]
+fn import_jsonl_roundtrips_exported_context_and_assets() {
+    let dir = tempdir().unwrap();
+    let source = dir.path().join("source");
+    let restored = dir.path().join("restored");
+    let context = dir.path().join("context.jsonl");
+    let assets = dir.path().join("bundle-assets");
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", source.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::write(source.join("assets/board.png"), [0x89, 0x50, 0x4e, 0x47]).unwrap();
+    std::fs::write(
+        source.join("notes/board.md"),
+        "---\ntype: image\ntitle: Board\ntags: [visual]\nasset: assets/board.png\n---\n복원 가능한 온톨로지 보드.",
+    )
+    .unwrap();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&source)
+        .args([
+            "export",
+            "--format",
+            "jsonl",
+            "--output",
+            context.to_str().unwrap(),
+            "--copy-assets",
+            assets.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", restored.to_str().unwrap()])
+        .assert()
+        .success();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&restored)
+        .args([
+            "import",
+            context.to_str().unwrap(),
+            "--format",
+            "jsonl",
+            "--asset-root",
+            assets.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("import 완료: notes=1 assets=1"));
+
+    assert!(restored.join("notes/board.md").exists());
+    assert!(restored.join("assets/board.png").exists());
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&restored)
+        .args(["build", "--no-embed"])
+        .assert()
+        .success();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&restored)
+        .args(["search", "온톨로지"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("board#0000"));
+}
+
 #[cfg(unix)]
 fn make_executable(path: &std::path::Path) {
     use std::os::unix::fs::PermissionsExt;
