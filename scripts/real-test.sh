@@ -249,6 +249,8 @@ assert data['RunAtLoad'] is True and data['KeepAlive'] is True, data
 assert data['StandardOutPath'].endswith('/.pack/watch.out.log'), data
 assert data['StandardErrorPath'].endswith('/.pack/watch.err.log'), data
 PY
+SKIP_BUILD=1 PACK_BIN="$PACK_BIN" NOTE_COUNT=80 MEDIA_COUNT=8 REPEATS=1 WARMUP=0 P95_MAX_MS=1000 OUT_JSON=/tmp/ontopack-real-perf-smoke.json OUT_MD=/tmp/ontopack-real-perf-smoke.md "$ROOT/scripts/perf-smoke.sh" >/tmp/ontopack-real-perf-smoke.out
+grep -q 'perf smoke ok:' /tmp/ontopack-real-perf-smoke.out
 (cd "$PACK_DIR" && ONTOPACK_LOCAL_WORKER="$ROOT/scripts/providers/fixture_media_worker.py" OPENAI_API_KEY="" "$PACK_BIN" enrich-pending --provider-command "$ROOT/scripts/providers/auto_media_worker.py" --limit 1 >/tmp/ontopack-real-enrich-pending.out)
 grep -q 'processed=1' /tmp/ontopack-real-enrich-pending.out
 grep -q 'indexed=' /tmp/ontopack-real-enrich-pending.out

@@ -10,6 +10,7 @@ MEDIA_COUNT="${MEDIA_COUNT:-160}"
 REPEATS="${REPEATS:-9}"
 WARMUP="${WARMUP:-2}"
 PACK_BIN="${PACK_BIN:-$ROOT/target/debug/pack}"
+SKIP_BUILD="${SKIP_BUILD:-0}"
 OUT_DIR="${OUT_DIR:-$ROOT/output/perf}"
 STAMP="${STAMP:-$(date +%Y%m%d-%H%M%S)}"
 OUT_JSON="${OUT_JSON:-$OUT_DIR/ontopack-perf-$STAMP.json}"
@@ -31,7 +32,11 @@ cleanup() {
 trap cleanup EXIT
 
 echo "[1/7] build debug pack binary"
-cargo build --quiet -p pack-cli --manifest-path "$ROOT/Cargo.toml"
+if [[ "$SKIP_BUILD" == "1" ]]; then
+  test -x "$PACK_BIN"
+else
+  cargo build --quiet -p pack-cli --manifest-path "$ROOT/Cargo.toml"
+fi
 
 echo "[2/7] seed synthetic pack: $PACK_DIR ($NOTE_COUNT notes, $MEDIA_COUNT media notes)"
 "$PACK_BIN" init "$PACK_DIR" >/tmp/ontopack-perf-init.out
