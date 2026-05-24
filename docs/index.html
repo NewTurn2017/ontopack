@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OntoPack · Local-first knowledge packs</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #070a12;
+      --panel: rgba(16, 24, 40, 0.72);
+      --panel-2: rgba(5, 150, 105, 0.10);
+      --text: #e5f0ff;
+      --muted: #94a3b8;
+      --line: rgba(148, 163, 184, 0.22);
+      --green: #4ade80;
+      --cyan: #22d3ee;
+      --violet: #a78bfa;
+      --amber: #fbbf24;
+      --code: #0b1020;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(34, 211, 238, 0.18), transparent 28rem),
+        radial-gradient(circle at 80% 10%, rgba(167, 139, 250, 0.17), transparent 24rem),
+        linear-gradient(180deg, #070a12 0%, #090d17 45%, #05070d 100%);
+      color: var(--text);
+      line-height: 1.65;
+    }
+    a { color: var(--cyan); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .wrap { width: min(1120px, calc(100% - 32px)); margin: 0 auto; }
+    header { padding: 28px 0 8px; position: sticky; top: 0; z-index: 2; backdrop-filter: blur(18px); background: rgba(7, 10, 18, 0.72); border-bottom: 1px solid var(--line); }
+    nav { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+    .brand { font-weight: 800; letter-spacing: 0.02em; }
+    .brand span { color: var(--green); }
+    .navlinks { display: flex; gap: 16px; flex-wrap: wrap; font-size: 14px; }
+    .hero { padding: 72px 0 42px; display: grid; grid-template-columns: 1.06fr 0.94fr; gap: 32px; align-items: center; }
+    .eyebrow { color: var(--green); font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; font-size: 12px; }
+    h1 { font-size: clamp(42px, 7vw, 78px); line-height: 0.95; margin: 14px 0 20px; letter-spacing: -0.06em; }
+    .lead { font-size: clamp(18px, 2.5vw, 23px); color: #cbd5e1; max-width: 760px; }
+    .cta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 28px; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 999px; padding: 12px 18px; font-weight: 700; background: rgba(15, 23, 42, 0.72); color: var(--text); }
+    .btn.primary { background: linear-gradient(135deg, rgba(34, 211, 238, 0.22), rgba(74, 222, 128, 0.20)); border-color: rgba(34, 211, 238, 0.48); }
+    .terminal { background: rgba(3, 7, 18, 0.88); border: 1px solid rgba(34, 211, 238, 0.25); border-radius: 22px; box-shadow: 0 24px 80px rgba(0,0,0,.48); overflow: hidden; }
+    .terminal-bar { height: 42px; display: flex; align-items: center; gap: 8px; padding: 0 16px; border-bottom: 1px solid var(--line); }
+    .dot { width: 11px; height: 11px; border-radius: 50%; background: #ef4444; }
+    .dot:nth-child(2) { background: #f59e0b; } .dot:nth-child(3) { background: #22c55e; }
+    pre { margin: 0; padding: 22px; overflow: auto; background: var(--code); color: #d1fae5; font-size: 14px; line-height: 1.55; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    section { padding: 44px 0; }
+    h2 { font-size: clamp(28px, 4vw, 44px); margin: 0 0 18px; letter-spacing: -0.04em; }
+    h3 { margin-top: 0; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .card { border: 1px solid var(--line); border-radius: 22px; padding: 22px; background: var(--panel); }
+    .card strong { color: #fff; }
+    .muted { color: var(--muted); }
+    .steps { display: grid; gap: 16px; }
+    .step { display: grid; grid-template-columns: 58px 1fr; gap: 18px; align-items: start; }
+    .num { width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center; font-weight: 800; color: #04111d; background: linear-gradient(135deg, var(--cyan), var(--green)); }
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .pillrow { display: flex; gap: 10px; flex-wrap: wrap; }
+    .pill { border: 1px solid var(--line); padding: 7px 11px; border-radius: 999px; color: #cbd5e1; background: rgba(15,23,42,.7); font-size: 13px; }
+    footer { border-top: 1px solid var(--line); padding: 28px 0 48px; color: var(--muted); }
+    @media (max-width: 860px) { .hero, .grid, .split { grid-template-columns: 1fr; } header { position: static; } }
+  </style>
+</head>
+<body>
+  <header>
+    <nav class="wrap">
+      <div class="brand"><span>●</span> OntoPack</div>
+      <div class="navlinks">
+        <a href="#install">Install</a>
+        <a href="#tutorial-ko">한국어 튜토리얼</a>
+        <a href="#tutorial-en">Tutorial</a>
+        <a href="#mcp">MCP</a>
+        <a href="https://github.com/NewTurn2017/ontopack#readme">README</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <div>
+        <div class="eyebrow">local-first · portable · agent-ready</div>
+        <h1>Build knowledge packs you can actually move.</h1>
+        <p class="lead">OntoPack turns Markdown, assets, citations, and media enrichment into a local folder that can be searched, served, bundled, restored, and exposed to AI agents through MCP.</p>
+        <div class="cta">
+          <a class="btn primary" href="#install">Start in 5 minutes</a>
+          <a class="btn" href="https://github.com/NewTurn2017/ontopack">GitHub</a>
+          <a class="btn" href="mvp.md">MVP runbook</a>
+        </div>
+      </div>
+      <div class="terminal" aria-label="terminal demo">
+        <div class="terminal-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+        <pre><code>$ pack init research-pack
+$ cd research-pack
+$ cp ~/Downloads/slide.png _inbox/
+$ pack process && pack build --incremental
+$ pack search "ontology" --mode keyword
+
+[keyword] Knowledge Graph Primer
+  note: graph-primer / graph-primer#0000
+  snippet: ontology, relation, entity...</code></pre>
+      </div>
+    </section>
+
+    <section>
+      <div class="grid">
+        <div class="card"><h3>Readable by default</h3><p class="muted">Markdown and assets remain the source of truth. The database is a rebuildable derived index.</p></div>
+        <div class="card"><h3>MCP without mystery</h3><p class="muted">The MCP server returns context blocks and citations. Your agent writes the final answer.</p></div>
+        <div class="card"><h3>Portable across machines</h3><p class="muted">Bundle a pack into a directory or tar.gz archive, import it elsewhere, then rebuild locally.</p></div>
+      </div>
+    </section>
+
+    <section id="install">
+      <h2>Install from GitHub</h2>
+      <div class="split">
+        <div class="card">
+          <h3>macOS / Linux</h3>
+          <pre><code>git clone https://github.com/NewTurn2017/ontopack.git
+cd ontopack
+cargo build --release -p pack-cli
+./target/release/pack --help
+scripts/install.sh --prefix "$HOME/.local" --completion-shell zsh</code></pre>
+        </div>
+        <div class="card">
+          <h3>Windows / Parallels</h3>
+          <pre><code>git clone https://github.com/NewTurn2017/ontopack.git
+cd ontopack
+cargo build --release -p pack-cli
+.\target\release\pack.exe --help
+powershell -ExecutionPolicy Bypass -File .\scripts\windows-smoke.ps1 -PackBin .\target\release\pack.exe</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section id="tutorial-ko">
+      <h2>한국어 5분 튜토리얼</h2>
+      <div class="steps">
+        <div class="step"><div class="num">1</div><div><h3>팩 생성</h3><pre><code>pack init ~/ontopack-demo
+cd ~/ontopack-demo</code></pre></div></div>
+        <div class="step"><div class="num">2</div><div><h3>노트 추가</h3><pre><code>cat > _inbox/hook.md <<'NOTE'
+---
+type: prompt
+title: 썸네일 훅
+tags: [youtube, hook]
+---
+클릭을 부르는 훅 카피와 강의 오프닝 구조.
+NOTE</code></pre></div></div>
+        <div class="step"><div class="num">3</div><div><h3>처리·검색·뷰어</h3><pre><code>pack process
+pack build --incremental
+pack search "훅"
+pack open</code></pre></div></div>
+        <div class="step"><div class="num">4</div><div><h3>이동 가능한 번들</h3><pre><code>pack bundle ../demo-bundle --archive ../demo.tar.gz</code></pre></div></div>
+      </div>
+    </section>
+
+    <section id="tutorial-en">
+      <h2>English 5-minute tutorial</h2>
+      <div class="steps">
+        <div class="step"><div class="num">1</div><div><h3>Create</h3><pre><code>pack init ~/ontopack-demo
+cd ~/ontopack-demo</code></pre></div></div>
+        <div class="step"><div class="num">2</div><div><h3>Capture</h3><pre><code>cat > _inbox/source-card.md <<'NOTE'
+---
+type: note
+title: Source Cards
+tags: [research, citation]
+---
+A source card keeps useful context and citations.
+NOTE</code></pre></div></div>
+        <div class="step"><div class="num">3</div><div><h3>Search and serve</h3><pre><code>pack process
+pack build --incremental
+pack search "citation"
+pack open --port 0 --no-browser --print-url</code></pre></div></div>
+        <div class="step"><div class="num">4</div><div><h3>Move it</h3><pre><code>pack bundle ../demo-bundle --archive ../demo.tar.gz
+pack init ../restored-pack
+cd ../restored-pack
+pack import ../demo.tar.gz</code></pre></div></div>
+      </div>
+    </section>
+
+    <section id="mcp">
+      <h2>MCP and media workflows</h2>
+      <div class="split">
+        <div class="card">
+          <h3>Agent context</h3>
+          <pre><code>cargo build --release -p pack-mcp
+pack-mcp --pack-root /path/to/pack</code></pre>
+          <p class="muted">Use `search`, `ask`, `related`, `timeline`, and media tools from Claude/Codex.</p>
+        </div>
+        <div class="card">
+          <h3>Media enrichment</h3>
+          <pre><code>pack enrich-pending \
+  --provider-command scripts/providers/fixture_media_worker.py \
+  --limit 10</code></pre>
+          <p class="muted">Provider workers read JSON from stdin and write safe enrichment patches to stdout.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>What it is good for</h2>
+      <div class="pillrow">
+        <span class="pill">lecture packs</span><span class="pill">agent memory</span><span class="pill">citation search</span><span class="pill">local media KB</span><span class="pill">portable demos</span><span class="pill">MCP context</span><span class="pill">knowledge maintenance</span>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">OntoPack is a pre-release local-first OSS-style project. Public source builds are available; choose a repository license before broad third-party reuse.</div>
+  </footer>
+</body>
+</html>

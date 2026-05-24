@@ -1,79 +1,308 @@
-# ontopack
+# OntoPack · Local-first knowledge packs
 
-로컬 멀티모달 지식 팩 엔진. 평문 파일이 진실, SQLite+FTS5가 빠른 인덱스.
+```text
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ONTOPACK                                                                     │
+│                                                                              │
+│   Plain files are the source of truth. SQLite is the fast derived index.      │
+│   Capture notes, media, context and citations in one portable local pack.     │
+│                                                                              │
+│   notes/*.md  +  assets/*  ──▶  pack build/search/serve/mcp/bundle            │
+│                                                                              │
+│   local-first · MCP-ready · citation-ready · Windows-portable smoke path      │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
 
-## 빠른 MVP 검증
+**OntoPack** is a Rust CLI and local viewer for building portable, multimodal knowledge packs.
+**온토팩**은 노트·이미지·영상·오디오·에이전트 컨텍스트를 로컬 폴더 하나로 관리하는 Rust 기반 지식 팩 엔진입니다.
 
-- 시스템 동작 원리, 상세 실행 방법, 미디어/성능 다음 계획은 `docs/system-deep-dive.md`를 참고하세요.
-- 새 사용자는 `docs/mvp.md`의 5분 runbook으로 init → process/build → search → MCP → viewer를 확인할 수 있습니다.
-- 전체 자동 smoke: `scripts/mvp-smoke.sh` (임시 팩으로 CLI + MCP + viewer API + `pack open --no-browser` 검증)
-- 실제형 테스트: `scripts/real-test.sh` (강의/자료 pack + 필터 스트레스 + MCP/viewer API + optional real-embed 준비)
+- **Source of truth:** Markdown files and assets stay readable on disk.
+- **Fast derived index:** SQLite + FTS5 powers keyword search; optional `real-embed` adds BGE-M3 vector/hybrid search.
+- **Agent-ready:** MCP server returns citation-ready context blocks instead of hallucinated answers.
+- **Portable:** `pack export`, `pack bundle`, and `pack import` move packs across machines.
+- **No framework viewer:** `pack open` serves a localhost wiki/gallery/search UI from the binary.
 
-## M1 (현재)
-- `pack init [경로]` — 새 팩
-- `pack add <파일> [--type T]` — md/markdown/txt→notes/, 그 외→assets/+사이드카
-- `pack build` — 인덱스 (재)빌드
-- `pack search "<질의>"` — 키워드(BM25) 검색
+> Current status: pre-release OSS project. Source builds and smoke tests are available; prebuilt binary releases are not published yet.
 
-## M2A
-- `pack process` — `_inbox/` 파일을 `notes/` 또는 `assets/` + 사이드카로 정리
-- `pack build --incremental` — 변경된 노트만 파생 인덱스 갱신
-- 인덱스는 `notes`, `notes_fts`, `edges`, `chunks`를 재생성/갱신
+---
 
-## M2B
-- `pack build --no-embed` — 기본 MVP와 같은 오프라인 키워드/청크 인덱스만 빌드(모델 다운로드 없음)
-- `pack-core::embed::Embedder` — 실제 모델과 테스트용 fake embedder를 분리하는 임베딩 인터페이스
-- `pack-core`는 `sqlite-vec` 기반 `vec_chunks` 파생 테이블에 청크 벡터를 저장하고, fake embedder fixture로 벡터 검색을 검증
-- 실제 BGE-M3 provider는 optional feature로 분리:
-  - 기본 빌드: 모델 다운로드 없음, `pack embed`는 feature 안내 오류를 출력
-  - 실제 임베딩 빌드: `cargo build --release --features real-embed`
-  - 사용: `pack embed` 또는 기존 인덱스를 유지하려면 `pack embed --skip-build`
-  - 첫 실행은 fastembed/Hugging Face 캐시에 `BAAI/bge-m3` 모델을 내려받을 수 있음
+## Quick links
 
-## M2C
-- `pack search "<질의>" --mode keyword` — 기본 키워드 검색을 citation-ready source card로 출력
-- `pack search "<질의>" --mode vector|hybrid` — `real-embed` 빌드에서 BGE-M3 임베더로 vector/hybrid 검색
-- `pack export --format markdown-bundle|jsonl|mcp-context [--output 파일] [--copy-assets 디렉터리]` — UI 없이 Claude/Codex/강의 번들/다른 앱으로 넘길 수 있는 citation-ready portable context 출력. `--copy-assets`는 참조된 원본/derived media를 경로 보존 방식으로 복사
-- `pack import context.jsonl --format jsonl [--asset-root 디렉터리]` — export JSONL과 복사된 asset tree를 새 팩으로 복원
-- `pack bundle <디렉터리> [--archive bundle.tar.gz]` / `pack import <bundle-디렉터리|bundle.tar.gz>` — context JSONL, Markdown bundle, MCP context, assets, manifest를 한 portable 디렉터리 artifact로 묶고, 필요하면 같은 레이아웃을 `.tar.gz`로 포장해 복원
-- 검색 결과는 `[keyword|vector|hybrid] 제목  (note_id / chunk_id) snippet` 형태라 MCP/뷰어 citation에 재사용 가능
-- core에서는 `SearchHit`, `RankSource`, RRF fusion, `Pack::search_hybrid_with`를 제공하며 테스트는 fake embedder로 모델 다운로드 없이 검증
+| Topic | Link |
+| --- | --- |
+| Official-style tutorial page | [`docs/index.html`](docs/index.html) · GitHub Pages after publish: `https://newturn2017.github.io/ontopack/` |
+| 5-minute MVP runbook | [`docs/mvp.md`](docs/mvp.md) |
+| MCP setup | [`docs/mcp.md`](docs/mcp.md) |
+| Local viewer/API | [`docs/viewer.md`](docs/viewer.md) |
+| Media providers | [`docs/providers.md`](docs/providers.md) |
+| Real test notes | [`docs/real-test.md`](docs/real-test.md) |
 
-## M3
-- `pack-mcp --pack-root <팩>` — Claude/Codex용 stdio MCP 서버
-- MCP 도구: `search`, `ask`, `related`, `add`, `timeline`, `media/list_pending`, `media/read_note`, `media/write_enrichment`, `index/rebuild`
-- `ask`는 LLM 답변을 코어에서 생성하지 않고 citation-ready `context_blocks`를 반환
-- `pack enrich-pending --provider-command scripts/providers/auto_media_worker.py` — API 키가 있으면 API provider를 우선 사용하고, 없으면 macOS 로컬 Ollama/Tesseract/FFmpeg worker로 pending media enrichment 후 검색 인덱스 재빌드
-- 포터블 bundle/import 저장 형식은 OS-neutral path 계약(`assets/...`)을 사용하지만, 현재 real smoke와 provider toolchain 검증은 macOS 기준입니다. Windows는 `docs/providers.md`, `docs/real-test.md`의 미검증 경로를 참고하세요.
-- media 도구는 Claude/Codex 같은 외부 AI worker가 로컬 asset sidecar를 읽고 caption/OCR/transcript/summary를 안전한 managed block에 쓰도록 연결
-- `related`/`timeline`/`add`/media 동작은 `pack-core`가 소유하고 MCP는 얇은 JSON-RPC 어댑터로 유지
-- 설정 예시는 `docs/mcp.md`, provider worker 예시는 `docs/providers.md` 참고
+---
 
-## M4
-- `pack serve --port 8787` — 현재 팩을 localhost JSON API + 정적 위키 뷰어로 제공
-- `pack serve --semantic` / `pack open --semantic` — `real-embed` 빌드에서 서버 프로세스에 BGE-M3 임베더를 한 번 로드해 `/api/search?mode=vector|hybrid`와 뷰어 semantic mode를 활성화
-- `pack open` — 로컬 뷰어 URL을 브라우저로 열고 서버를 유지
-- API: `/api/search`, `/api/ask`, `/api/facets`, `/api/gallery`, `/api/notes/:id`, `/api/related/:id`, `/api/timeline`, `/api/graph`
-- 뷰어: 검색 카드, Ask 컨텍스트, type/tag/date 필터, 노트 상세, 관련 노트, 타임라인, 갤러리, lightweight graph 요약
-- 자동화 smoke: `pack serve --port 0 --once --request $'GET /api/search?q=hello HTTP/1.1\r\nHost: localhost\r\n\r\n'`
-- 자세한 사용법은 `docs/viewer.md` 참고
+## Install from GitHub
 
-## M6
-- `pack duplicates [--json]` — source-of-truth note body를 정규화해 같은 본문을 가진 중복 후보 그룹을 리포트
-- `pack orphans [--json]` — incoming/outgoing wiki link가 모두 없는 외톨이 노트를 read-only로 리포트
-- `pack gaps [--json]` — 존재하지 않는 노트 id로 향하는 깨진 wiki link를 read-only로 리포트
-- `pack topics [--min-count N] [--json]` — 태그 기반 토픽 노드와 co-occurrence edge를 결정적으로 리포트
-- `pack recommend [note-id] [-k N] [--json]` — 명시 태그가 겹치지만 아직 연결되지 않은 관련 노트 후보를 추천
+### macOS / Linux
 
-## M7
-- `pack watch [--once] [--interval-ms N]` — `_inbox` 처리, 증분 인덱싱, object manifest 갱신을 폴링 루프로 실행
-- `pack doctor [--json]` — 실행 파일, pack root, 필수 디렉터리, index 상태를 설치/운영 전 점검
-- `pack completions <bash|zsh|fish>` — 의존성 없이 shell completion 스크립트를 stdout으로 출력
-- `scripts/install.sh --prefix ~/.local --completion-shell zsh` — release binary를 빌드/설치하고 completion을 선택 설치
-- `scripts/install-launch-agent.sh --pack-root <pack>` — macOS LaunchAgent plist를 생성/선택 설치하여 `pack watch`를 로그인 백그라운드 작업으로 실행
-- `scripts/perf-smoke.sh` / `scripts/perf-benchmark.sh` — synthetic pack으로 viewer/API 성능 회귀를 측정하고 작은 스모크는 자동 검증
-- `scripts/windows-smoke.ps1 -PackBin .\\pack.exe` — Windows에서 init/build/search/doctor/export/bundle/import를 검증하는 PowerShell smoke
-- `scripts/provider-doctor.py [--json] [--require fixture|local|api]` — optional media provider 도구/worker/환경변수 준비 상태를 진단
+```bash
+# 1) Clone
+git clone https://github.com/NewTurn2017/ontopack.git
+cd ontopack
 
-## 다음
-CLIP/실제 STT 같은 provider-heavy 멀티모달 확장, orphan/gap/topic-map 지식 유지보수, watcher/installer/Windows 검증.
+# 2) Build the CLI
+cargo build --release -p pack-cli
+
+# 3) Run directly
+./target/release/pack --help
+
+# 4) Optional: put release binaries on PATH for the tutorial commands below
+export PATH="$PWD/target/release:$PATH"
+
+# 5) Optional: install to ~/.local/bin with shell completion
+scripts/install.sh --prefix "$HOME/.local" --completion-shell zsh
+```
+
+Build every workspace binary, including the MCP server:
+
+```bash
+cargo build --release
+./target/release/pack-mcp --help
+```
+
+Enable semantic vector/hybrid search with the optional real embedding feature:
+
+```bash
+cargo build --release -p pack-cli --features real-embed
+./target/release/pack embed
+./target/release/pack search "ontology" --mode hybrid
+```
+
+The first `real-embed` run may download/cache the BGE-M3 model through FastEmbed/Hugging Face.
+
+### Windows / Parallels PowerShell
+
+```powershell
+# Install prerequisites first: Git + Rust toolchain from rustup.
+# Then clone and build.
+git clone https://github.com/NewTurn2017/ontopack.git
+cd ontopack
+cargo build --release -p pack-cli
+
+# Run the CLI
+.\target\release\pack.exe --help
+
+# Validate the Windows portability path
+powershell -ExecutionPolicy Bypass -File .\scripts\windows-smoke.ps1 -PackBin .\target\release\pack.exe
+```
+
+The Windows smoke covers `init`, `build --no-embed`, `search`, `doctor`, `export`, `bundle`, and `import`.
+Live Windows validation is intentionally separated so it can be run on your Parallels machine.
+
+---
+
+## 5-minute tutorial · 한국어
+
+### 1. 새 팩 만들기
+
+```bash
+pack init ~/ontopack-demo
+cd ~/ontopack-demo
+```
+
+### 2. `_inbox`에 노트 넣기
+
+```bash
+cat > _inbox/hook.md <<'NOTE'
+---
+type: prompt
+title: 썸네일 훅
+tags: [youtube, hook]
+created: 2026-05-24
+---
+클릭을 부르는 훅 카피와 강의 오프닝 구조.
+NOTE
+```
+
+### 3. 처리하고 검색하기
+
+```bash
+pack process
+pack build --incremental
+pack search "훅" --mode keyword
+```
+
+성공하면 `[keyword]` source card와 `note_id / chunk_id`가 함께 출력됩니다.
+
+### 4. 로컬 뷰어 열기
+
+```bash
+pack open
+```
+
+자동화/원격 환경에서는 브라우저를 열지 않고 URL만 출력할 수 있습니다.
+
+```bash
+pack open --port 0 --no-browser --print-url
+```
+
+### 5. 다른 머신으로 옮기기
+
+```bash
+pack bundle ../ontopack-demo-bundle --archive ../ontopack-demo.tar.gz
+```
+
+복원할 머신에서:
+
+```bash
+pack init ~/restored-pack
+cd ~/restored-pack
+pack import /path/to/ontopack-demo.tar.gz
+pack build --no-embed
+pack search "훅"
+```
+
+---
+
+## 5-minute tutorial · English
+
+### 1. Create a pack
+
+```bash
+pack init ~/ontopack-demo
+cd ~/ontopack-demo
+```
+
+### 2. Drop a note into `_inbox`
+
+```bash
+cat > _inbox/source-card.md <<'NOTE'
+---
+type: note
+title: Source Cards
+tags: [research, citation]
+created: 2026-05-24
+---
+A source card keeps useful context, search keywords, and citation-ready snippets.
+NOTE
+```
+
+### 3. Process, index, and search
+
+```bash
+pack process
+pack build --incremental
+pack search "citation" --mode keyword
+```
+
+A successful result prints a citation-ready card with the note id and chunk id.
+
+### 4. Open the local viewer
+
+```bash
+pack open
+```
+
+Or print a URL without launching a browser:
+
+```bash
+pack open --port 0 --no-browser --print-url
+```
+
+### 5. Bundle and restore elsewhere
+
+```bash
+pack bundle ../ontopack-demo-bundle --archive ../ontopack-demo.tar.gz
+```
+
+On another machine:
+
+```bash
+pack init ~/restored-pack
+cd ~/restored-pack
+pack import /path/to/ontopack-demo.tar.gz
+pack build --no-embed
+pack search "citation"
+```
+
+---
+
+## Command map
+
+| Command | Purpose |
+| --- | --- |
+| `pack init [path]` | Create a pack skeleton. |
+| `pack add <file> [--type T]` | Add Markdown as notes, other files as assets with sidecars. |
+| `pack process` | Move `_inbox/` files into managed notes/assets. |
+| `pack build [--incremental] [--no-embed]` | Build or refresh the derived SQLite/FTS/chunk index. |
+| `pack search <query> [--mode keyword\|vector\|hybrid]` | Search and print citation-ready source cards. |
+| `pack embed [--skip-build]` | Build vector chunk index with the optional real embedding feature. |
+| `pack serve` / `pack open` | Run the localhost JSON API and static viewer. |
+| `pack export` / `pack import` / `pack bundle` | Move context and assets across tools or machines. |
+| `pack watch [--once]` | Poll `_inbox`, process, and incrementally index. |
+| `pack doctor [--json]` | Diagnose install and pack health. |
+| `pack duplicates` / `orphans` / `gaps` | Maintain knowledge quality. |
+| `pack topics` / `recommend` | Build tag topic maps and relation suggestions. |
+| `pack enrich-pending` | Run external media provider workers safely. |
+| `pack completions <bash\|zsh\|fish>` | Print shell completion scripts. |
+
+MCP binary:
+
+```bash
+pack-mcp --pack-root /path/to/pack
+```
+
+MCP tools include `search`, `ask`, `related`, `add`, `timeline`, `media/list_pending`, `media/read_note`, `media/write_enrichment`, and `index/rebuild`.
+
+---
+
+## Pack layout
+
+```text
+my-pack/
+├── _inbox/             # drop zone for unprocessed files
+├── notes/              # Markdown notes and media sidecars: human-readable truth
+├── assets/             # original assets plus derived media
+└── .pack/              # derived DB/index/runtime metadata; can be rebuilt
+```
+
+OntoPack treats `notes/` and `assets/` as durable content. `.pack/` is a derived working area.
+
+---
+
+## Use cases
+
+- **Lecture and research packs:** collect references, slides, screenshots, and source-card snippets.
+- **Agent memory packs:** expose local context to Claude/Codex through MCP without uploading a database.
+- **Media knowledge bases:** enrich images/video/audio with captions, OCR, transcripts, tags, and summaries.
+- **Portable demos:** bundle a pack into `.tar.gz`, move it to another OS, rebuild the index, and search.
+- **Knowledge maintenance:** find duplicates, orphans, broken wiki links, topic clusters, and relation candidates.
+
+---
+
+## Verification
+
+Useful local gates:
+
+```bash
+cargo test
+cargo clippy --all-targets -- -D warnings
+scripts/mvp-smoke.sh
+scripts/real-test.sh
+scripts/perf-smoke.sh
+```
+
+Optional heavier proof paths:
+
+```bash
+RUN_REAL_EMBED=1 scripts/real-test.sh
+NOTE_COUNT=10000 MEDIA_COUNT=800 scripts/perf-benchmark.sh
+```
+
+Current development-machine evidence includes successful CLI/MCP/viewer smoke, real embedding path, media intelligence checks, and 10k-note synthetic performance runs. See `docs/test-results/` for generated reports when present.
+
+---
+
+## Project status and license
+
+- Package version: `0.1.0` workspace crates.
+- Distribution: source build from GitHub; binary release packaging is not published yet.
+- License: not specified in this repository yet. Choose and add a `LICENSE` file before inviting third-party reuse beyond source download/testing.
