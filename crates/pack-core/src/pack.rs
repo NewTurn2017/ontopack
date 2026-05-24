@@ -125,6 +125,27 @@ pub struct LinkGap {
     pub missing_target: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TopicNode {
+    pub topic: String,
+    pub note_count: usize,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TopicEdge {
+    pub source: String,
+    pub target: String,
+    pub weight: usize,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TopicMap {
+    pub topics: Vec<TopicNode>,
+    pub edges: Vec<TopicEdge>,
+}
+
 #[derive(Serialize)]
 struct AssetSidecarFrontMatter<'a> {
     #[serde(rename = "type")]
@@ -438,6 +459,88 @@ impl Pack {
                 .then_with(|| a.source_id.cmp(&b.source_id))
         });
         Ok(gaps)
+    }
+
+    pub fn topic_map(&self, min_count: usize) -> Result<TopicMap> {
+        let min_count = min_count.max(1);
+        let mut by_topic: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let mut by_pair: BTreeMap<(String, String), BTreeSet<String>> = BTreeMap::new();
+
+        for note in self.scan_notes()? {
+            let tags = note
+                .tags
+                .iter()
+                .map(|tag| tag.trim())
+                .filter(|tag| !tag.is_empty())
+                .map(str::to_string)
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
+
+            for tag in &tags {
+                by_topic
+                    .entry(tag.clone())
+                    .or_default()
+                    .insert(note.id.clone());
+            }
+            for (idx, source) in tags.iter().enumerate() {
+                for target in tags.iter().skip(idx + 1) {
+                    by_pair
+                        .entry((source.clone(), target.clone()))
+                        .or_default()
+                        .insert(note.id.clone());
+                }
+            }
+        }
+
+        let mut topics = by_topic
+            .into_iter()
+            .filter_map(|(topic, notes)| {
+                if notes.len() < min_count {
+                    return None;
+                }
+                Some(TopicNode {
+                    topic,
+                    note_count: notes.len(),
+                    notes: notes.into_iter().collect(),
+                })
+            })
+            .collect::<Vec<_>>();
+        topics.sort_by(|a, b| {
+            b.note_count
+                .cmp(&a.note_count)
+                .then_with(|| a.topic.cmp(&b.topic))
+        });
+        let retained = topics
+            .iter()
+            .map(|topic| topic.topic.clone())
+            .collect::<BTreeSet<_>>();
+
+        let mut edges = by_pair
+            .into_iter()
+            .filter_map(|((source, target), notes)| {
+                if notes.len() < min_count
+                    || !retained.contains(&source)
+                    || !retained.contains(&target)
+                {
+                    return None;
+                }
+                Some(TopicEdge {
+                    source,
+                    target,
+                    weight: notes.len(),
+                    notes: notes.into_iter().collect(),
+                })
+            })
+            .collect::<Vec<_>>();
+        edges.sort_by(|a, b| {
+            b.weight
+                .cmp(&a.weight)
+                .then_with(|| a.source.cmp(&b.source))
+                .then_with(|| a.target.cmp(&b.target))
+        });
+
+        Ok(TopicMap { topics, edges })
     }
 
     pub fn update_enrichment(&self, note_id: &str, patch: &EnrichmentPatch) -> Result<PathBuf> {
@@ -1322,6 +1425,38 @@ mod tests {
         assert_eq!(gaps[1].missing_target, "missing");
         assert_eq!(gaps[1].source_id, "b");
         assert_eq!(gaps[2].missing_target, "other");
+    }
+
+    #[test]
+    fn topic_map_reports_tag_nodes_and_cooccurrences() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("p");
+        Pack::init(&root, "p").unwrap();
+        std::fs::write(
+            root.join("notes/a.md"),
+            "---\ntags: [ontology, lecture]\n---\nA",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("notes/b.md"),
+            "---\ntags: [ontology, agent]\n---\nB",
+        )
+        .unwrap();
+        std::fs::write(root.join("notes/c.md"), "---\ntags: [scratch]\n---\nC").unwrap();
+        let pack = Pack::open(&root).unwrap();
+
+        let all = pack.topic_map(1).unwrap();
+        assert_eq!(all.topics[0].topic, "ontology");
+        assert_eq!(all.topics[0].note_count, 2);
+        assert!(all
+            .edges
+            .iter()
+            .any(|edge| edge.source == "lecture" && edge.target == "ontology"));
+
+        let filtered = pack.topic_map(2).unwrap();
+        assert_eq!(filtered.topics.len(), 1);
+        assert_eq!(filtered.topics[0].topic, "ontology");
+        assert!(filtered.edges.is_empty());
     }
 
     #[test]

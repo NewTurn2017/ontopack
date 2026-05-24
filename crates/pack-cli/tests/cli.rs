@@ -527,6 +527,45 @@ fn gaps_reports_missing_wikilink_targets() {
 }
 
 #[test]
+fn topics_reports_tag_topic_map() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("p");
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["init", root.to_str().unwrap()])
+        .assert()
+        .success();
+    std::fs::write(
+        root.join("notes/a.md"),
+        "---\ntags: [ontology, lecture]\n---\nA",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("notes/b.md"),
+        "---\ntags: [ontology, agent]\n---\nB",
+    )
+    .unwrap();
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["topics", "--min-count", "2"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("토픽맵: topics=1 edges=0"))
+        .stdout(predicate::str::contains("topic ontology count=2"));
+
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(&root)
+        .args(["topics", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#""topic": "ontology""#))
+        .stdout(predicate::str::contains(r#""source": "agent""#));
+}
+
+#[test]
 fn status_and_list_report_pending_enrichment() {
     let dir = tempdir().unwrap();
     let root = dir.path().join("p");

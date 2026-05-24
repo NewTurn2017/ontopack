@@ -231,6 +231,11 @@ grep -q '깨진 링크: count=' /tmp/ontopack-real-gaps.out
 grep -q 'dangling-gap -> missing-hygiene-target' /tmp/ontopack-real-gaps.out
 (cd "$PACK_DIR" && "$PACK_BIN" gaps --json >/tmp/ontopack-real-gaps.json)
 grep -q '"missing_target": "missing-hygiene-target"' /tmp/ontopack-real-gaps.json
+(cd "$PACK_DIR" && "$PACK_BIN" topics --min-count 3 >/tmp/ontopack-real-topics.out)
+grep -q '토픽맵: topics=' /tmp/ontopack-real-topics.out
+grep -q 'topic ontology count=' /tmp/ontopack-real-topics.out
+(cd "$PACK_DIR" && "$PACK_BIN" topics --min-count 3 --json >/tmp/ontopack-real-topics.json)
+grep -q '"topic": "ontology"' /tmp/ontopack-real-topics.json
 
 echo "[5/11] portable context exports"
 (cd "$PACK_DIR" && "$PACK_BIN" export --format jsonl >/tmp/ontopack-real-export.jsonl)

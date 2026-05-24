@@ -8,6 +8,7 @@ use flate2::Compression;
 use pack_core::enrichment::EnrichmentPatch;
 use pack_core::pack::{
     find_pack_root, AddOutcome, DuplicateGroup, LinkGap, OrphanNote, Pack, PackObject, PackStatus,
+    TopicMap,
 };
 use pack_core::search::{RankSource, SearchHit};
 use serde::Deserialize;
@@ -70,6 +71,15 @@ enum Commands {
     },
     /// 존재하지 않는 노트로 향하는 깨진 wiki link를 찾는다
     Gaps {
+        /// JSON으로 출력한다
+        #[arg(long)]
+        json: bool,
+    },
+    /// 태그 기반 토픽맵을 생성한다
+    Topics {
+        /// 최소 등장 노트 수
+        #[arg(long, default_value_t = 1)]
+        min_count: usize,
         /// JSON으로 출력한다
         #[arg(long)]
         json: bool,
@@ -305,6 +315,16 @@ fn main() -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&gaps)?);
             } else {
                 print_link_gaps(&gaps);
+            }
+        }
+        Commands::Topics { min_count, json } => {
+            let root = find_pack_root(&std::env::current_dir()?)?;
+            let pack = Pack::open(&root)?;
+            let topic_map = pack.topic_map(min_count)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&topic_map)?);
+            } else {
+                print_topic_map(&topic_map);
             }
         }
         Commands::EnrichNote {
@@ -685,6 +705,31 @@ fn print_link_gaps(gaps: &[LinkGap]) {
         println!(
             "- {} -> {} title={} path={}",
             gap.source_id, gap.missing_target, gap.source_title, gap.source_path
+        );
+    }
+}
+
+fn print_topic_map(topic_map: &TopicMap) {
+    println!(
+        "토픽맵: topics={} edges={}",
+        topic_map.topics.len(),
+        topic_map.edges.len()
+    );
+    for topic in &topic_map.topics {
+        println!(
+            "- topic {} count={} notes={}",
+            topic.topic,
+            topic.note_count,
+            topic.notes.join(",")
+        );
+    }
+    for edge in &topic_map.edges {
+        println!(
+            "- edge {} -- {} weight={} notes={}",
+            edge.source,
+            edge.target,
+            edge.weight,
+            edge.notes.join(",")
         );
     }
 }
