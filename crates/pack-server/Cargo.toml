@@ -2,6 +2,11 @@
 name = "pack-server"
 version = "0.1.0"
 edition = "2021"
+description = "Local HTTP API and embedded viewer server for OntoPack."
+license = "MIT"
+repository = "https://github.com/NewTurn2017/ontopack"
+homepage = "https://github.com/NewTurn2017/ontopack"
+readme = "../../README.md"
 
 [dependencies]
 pack-core = { path = "../pack-core" }

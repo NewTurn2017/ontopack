@@ -2,6 +2,11 @@
 name = "pack-cli"
 version = "0.1.0"
 edition = "2021"
+description = "OntoPack command-line interface for local-first knowledge packs."
+license = "MIT"
+repository = "https://github.com/NewTurn2017/ontopack"
+homepage = "https://github.com/NewTurn2017/ontopack"
+readme = "../../README.md"
 
 [[bin]]
 name = "pack"

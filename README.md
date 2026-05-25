@@ -22,7 +22,7 @@
 - **Portable:** `pack export`, `pack bundle`, and `pack import` move packs across machines.
 - **No framework viewer:** `pack open` serves a localhost wiki/gallery/search UI from the binary.
 
-> Current status: pre-release OSS project. Source builds and smoke tests are available; prebuilt binary releases are not published yet.
+> Current status: pre-release OSS project. Source builds and smoke tests are available; CI/release workflows now define the binary artifact path, but a public tagged binary release has not been published yet.
 
 ---
 
@@ -41,7 +41,18 @@
 
 ## Install from GitHub
 
-### macOS / Linux
+### Prebuilt binary release
+
+Tagged releases are intended to publish `pack` and `pack-mcp` archives for macOS, Linux, and Windows. Until the first public tag is cut, use the source-build path below.
+
+After downloading a release archive, verify it with `SHA256SUMS.txt`, put `pack` on your `PATH`, then run:
+
+```bash
+pack doctor
+pack --help
+```
+
+### macOS / Linux source build
 
 ```bash
 # 1) Clone
@@ -78,7 +89,7 @@ cargo build --release -p pack-cli --features real-embed
 
 The first `real-embed` run may download/cache the BGE-M3 model through FastEmbed/Hugging Face.
 
-### Windows / Parallels PowerShell
+### Windows / Parallels PowerShell source build
 
 ```powershell
 # Install prerequisites first: Git + Rust toolchain from rustup.
@@ -94,8 +105,7 @@ cargo build --release -p pack-cli
 powershell -ExecutionPolicy Bypass -File .\scripts\windows-smoke.ps1 -PackBin .\target\release\pack.exe
 ```
 
-The Windows smoke covers `init`, `build --no-embed`, `search`, `doctor`, `export`, `bundle`, and `import`.
-Live Windows validation is intentionally separated so it can be run on your Parallels machine.
+The Windows smoke covers `init`, `build --no-embed`, `search`, `doctor`, `export`, `bundle`, and `import`. GitHub Actions now includes this smoke on a Windows runner; local Parallels runs remain useful before publishing a release.
 
 ---
 
@@ -315,6 +325,7 @@ OntoPack treats `notes/` and `assets/` as durable content. `.pack/` is a derived
 Useful local gates:
 
 ```bash
+cargo fmt --check
 cargo test
 cargo clippy --all-targets -- -D warnings
 scripts/mvp-smoke.sh
@@ -336,5 +347,5 @@ Current development-machine evidence includes successful CLI/MCP/viewer smoke, r
 ## Project status and license
 
 - Package version: `0.1.0` workspace crates.
-- Distribution: source build from GitHub; binary release packaging is not published yet.
-- License: not specified in this repository yet. Choose and add a `LICENSE` file before inviting third-party reuse beyond source download/testing.
+- Distribution: source build from GitHub today; CI/release workflow is present for tagged binary artifacts.
+- License: MIT (`LICENSE`).
