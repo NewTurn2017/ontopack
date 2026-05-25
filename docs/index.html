@@ -467,7 +467,10 @@ pack bundle ../ontopack-demo-bundle --archive ../ontopack-demo.tar.gz</code></pr
 cd ontopack
 cargo build --release -p pack-cli
 ./target/release/pack --help
-scripts/install.sh --prefix "$HOME/.local" --completion-shell zsh</code></pre></div>
+scripts/install.sh --prefix "$HOME/.local" --completion-shell zsh
+pack --version
+pack setup --shell zsh
+pack doctor</code></pre></div>
             <div class="card"><h3>전체 workspace 빌드</h3><pre><code>cargo build --release
 ./target/release/pack-mcp --help
 cargo test --workspace --locked</code></pre></div>
@@ -511,6 +514,7 @@ scripts/real-test.sh</code></pre>
             <li><strong>CLI 동작 변경:</strong> <code>cargo test -q</code> + <code>cargo clippy --all-targets -- -D warnings</code>.</li>
             <li><strong>운영/릴리스 변경:</strong> smoke script, workflow YAML parse, GitHub Actions run URL까지 기록.</li>
             <li><strong>문서 변경:</strong> 링크, 코드 블록, 실제 명령 이름이 현재 CLI와 맞는지 확인.</li>
+            <li><strong>설치/초기 설정:</strong> <code>pack --version</code>, <code>pack setup</code>, <code>pack doctor</code>를 순서대로 실행해 사용자가 다음 행동을 알 수 있는지 확인.</li>
           </ol>
         </section>
 
@@ -622,7 +626,8 @@ cd /tmp/ontopack-visible-live
               <tr><td><code>open</code>/<code>serve</code></td><td>로컬 wiki/gallery UI</td><td><code>pack open --print-url</code></td></tr>
               <tr><td><code>enrich-pending</code></td><td>미디어 caption/OCR/transcript</td><td><code>pack enrich-pending --provider-command ...</code></td></tr>
               <tr><td><code>bundle</code>/<code>import</code></td><td>다른 머신으로 이동</td><td><code>pack bundle out --archive out.tar.gz</code></td></tr>
-              <tr><td><code>doctor</code></td><td>팩 건강 상태 확인</td><td><code>pack doctor</code></td></tr>
+              <tr><td><code>doctor</code></td><td>설치/팩 건강 상태와 다음 행동 확인</td><td><code>pack doctor</code></td></tr>
+              <tr><td><code>setup</code></td><td>첫 실행 체크리스트 확인</td><td><code>pack setup --shell zsh</code></td></tr>
             </tbody>
           </table>
         </section>

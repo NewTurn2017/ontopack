@@ -14,6 +14,7 @@ use pack_core::search::{RankSource, SearchHit};
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::json;
+use std::fmt;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -21,7 +22,7 @@ use std::process::{Command as ProcessCommand, Stdio};
 use std::time::Duration;
 
 #[derive(Parser)]
-#[command(name = "pack", about = "ontopack — 로컬 지식 팩 CLI")]
+#[command(name = "pack", version, about = "ontopack — 로컬 지식 팩 CLI")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -156,6 +157,12 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// 첫 실행/설치 후 점검 순서를 출력한다
+    Setup {
+        /// completion 설치 예시를 맞출 shell
+        #[arg(long, value_enum)]
+        shell: Option<CompletionShellArg>,
+    },
     /// shell completion 스크립트를 출력한다
     Completions {
         /// 대상 shell
@@ -268,6 +275,16 @@ enum CompletionShellArg {
     Bash,
     Zsh,
     Fish,
+}
+
+impl fmt::Display for CompletionShellArg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CompletionShellArg::Bash => write!(f, "bash"),
+            CompletionShellArg::Zsh => write!(f, "zsh"),
+            CompletionShellArg::Fish => write!(f, "fish"),
+        }
+    }
 }
 
 fn main() -> Result<()> {
@@ -484,6 +501,9 @@ fn main() -> Result<()> {
                 print_doctor_report(&report);
             }
         }
+        Commands::Setup { shell } => {
+            print_setup_guide(shell);
+        }
         Commands::Completions { shell } => {
             print_completion_script(shell);
         }
@@ -648,6 +668,8 @@ struct DoctorReport {
     cwd: String,
     pack_root: Option<String>,
     checks: Vec<DoctorCheck>,
+    warnings: Vec<String>,
+    recommendations: Vec<String>,
 }
 
 fn doctor_report() -> Result<DoctorReport> {
@@ -657,11 +679,34 @@ fn doctor_report() -> Result<DoctorReport> {
         .unwrap_or_else(|_| "unknown".to_string());
     let pack_root = find_pack_root(&cwd).ok();
     let mut checks = Vec::new();
+    let mut warnings = Vec::new();
+    let mut recommendations = Vec::new();
     checks.push(DoctorCheck {
         name: "executable".to_string(),
         ok: executable != "unknown",
         detail: executable.clone(),
     });
+    match find_pack_on_path() {
+        Some(path_pack) => {
+            if executable != "unknown" && !same_file_path(Path::new(&executable), &path_pack) {
+                warnings.push(format!(
+                    "PATH의 pack은 현재 실행 파일과 다릅니다: {}",
+                    path_pack.display()
+                ));
+                recommendations.push(format!(
+                    "원하는 pack이 먼저 잡히도록 PATH를 정리하세요. 현재 실행 파일: {}",
+                    executable
+                ));
+            }
+        }
+        None => {
+            warnings.push("PATH에서 pack을 찾지 못했습니다.".to_string());
+            recommendations.push(
+                "설치 후 새 터미널에서 `pack --help`가 동작하도록 PATH에 설치 prefix/bin을 추가하세요."
+                    .to_string(),
+            );
+        }
+    }
     match &pack_root {
         Some(root) => {
             checks.push(DoctorCheck {
@@ -687,12 +732,28 @@ fn doctor_report() -> Result<DoctorReport> {
                     format!("{} (run: pack build --incremental)", index_path.display())
                 },
             });
+            if !index_path.exists() {
+                recommendations.push(
+                    "검색/뷰어를 쓰기 전에 `pack build --incremental`로 인덱스를 생성하세요."
+                        .to_string(),
+                );
+            }
         }
-        None => checks.push(DoctorCheck {
-            name: "pack_root".to_string(),
-            ok: false,
-            detail: "pack.toml not found from current directory upward".to_string(),
-        }),
+        None => {
+            checks.push(DoctorCheck {
+                name: "pack_root".to_string(),
+                ok: false,
+                detail: "pack.toml not found from current directory upward".to_string(),
+            });
+            recommendations.push(
+                "현재 디렉터리를 새 OntoPack 팩으로 시작하려면 `pack init .`를 실행하세요."
+                    .to_string(),
+            );
+            recommendations.push(
+                "기존 팩을 점검하려면 pack.toml이 있는 디렉터리 안에서 `pack doctor`를 실행하세요."
+                    .to_string(),
+            );
+        }
     }
     let ok = checks.iter().all(|check| check.ok);
     Ok(DoctorReport {
@@ -701,6 +762,8 @@ fn doctor_report() -> Result<DoctorReport> {
         cwd: cwd.display().to_string(),
         pack_root: pack_root.map(|root| root.display().to_string()),
         checks,
+        warnings,
+        recommendations,
     })
 }
 
@@ -717,10 +780,53 @@ fn print_doctor_report(report: &DoctorReport) {
             check.detail
         );
     }
+    if !report.warnings.is_empty() {
+        println!("warnings:");
+        for warning in &report.warnings {
+            println!("- {warning}");
+        }
+    }
+    if !report.recommendations.is_empty() {
+        println!("next:");
+        for recommendation in &report.recommendations {
+            println!("- {recommendation}");
+        }
+    }
+}
+
+fn find_pack_on_path() -> Option<PathBuf> {
+    let paths = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&paths) {
+        let candidate = dir.join(if cfg!(windows) { "pack.exe" } else { "pack" });
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn same_file_path(a: &Path, b: &Path) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
+}
+
+fn print_setup_guide(shell: Option<CompletionShellArg>) {
+    let shell = shell.unwrap_or(CompletionShellArg::Zsh);
+    println!("setup: OntoPack first-run checklist");
+    println!(
+        "1. CLI 설치: scripts/install.sh --prefix \"$HOME/.local\" --completion-shell {shell}"
+    );
+    println!("2. PATH 확인: pack --help");
+    println!("3. 새 팩 생성: mkdir my-pack && cd my-pack && pack init .");
+    println!("4. 인덱스 생성: pack build --incremental");
+    println!("5. 상태 점검: pack doctor");
+    println!("6. 문서 확인: https://newturn2017.github.io/ontopack/");
 }
 
 fn print_completion_script(shell: CompletionShellArg) {
-    const COMMANDS: &str = "init add process status list duplicates orphans gaps topics recommend enrich-note enrich-pending build watch doctor completions embed search export import bundle serve open";
+    const COMMANDS: &str = "init add process status list duplicates orphans gaps topics recommend enrich-note enrich-pending build watch doctor setup completions embed search export import bundle serve open";
     match shell {
         CompletionShellArg::Bash => println!(
             r#"# OntoPack bash completion

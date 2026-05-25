@@ -418,6 +418,44 @@ fn doctor_reports_pack_health_without_mutating() {
 }
 
 #[test]
+fn doctor_guides_first_run_when_not_inside_pack() {
+    let dir = tempdir().unwrap();
+    Command::cargo_bin("pack")
+        .unwrap()
+        .current_dir(dir.path())
+        .args(["doctor"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("doctor: ok=false"))
+        .stdout(predicate::str::contains("next:"))
+        .stdout(predicate::str::contains("pack init ."));
+}
+
+#[test]
+fn setup_prints_first_run_checklist() {
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["setup", "--shell", "fish"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "setup: OntoPack first-run checklist",
+        ))
+        .stdout(predicate::str::contains("--completion-shell fish"))
+        .stdout(predicate::str::contains("pack doctor"));
+}
+
+#[test]
+fn version_flag_is_available_after_install() {
+    Command::cargo_bin("pack")
+        .unwrap()
+        .args(["--version"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(env!("CARGO_PKG_VERSION")));
+}
+
+#[test]
 fn completions_print_supported_shell_scripts() {
     Command::cargo_bin("pack")
         .unwrap()
@@ -426,6 +464,7 @@ fn completions_print_supported_shell_scripts() {
         .success()
         .stdout(predicate::str::contains("#compdef pack"))
         .stdout(predicate::str::contains("doctor"))
+        .stdout(predicate::str::contains("setup"))
         .stdout(predicate::str::contains("watch"));
 
     Command::cargo_bin("pack")

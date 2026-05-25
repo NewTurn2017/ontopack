@@ -48,6 +48,8 @@ Tagged releases are intended to publish `pack` and `pack-mcp` archives for macOS
 After downloading a release archive, verify it with `SHA256SUMS.txt`, put `pack` on your `PATH`, then run:
 
 ```bash
+pack --version
+pack setup
 pack doctor
 pack --help
 ```
@@ -70,6 +72,11 @@ export PATH="$PWD/target/release:$PATH"
 
 # 5) Optional: install to ~/.local/bin with shell completion
 scripts/install.sh --prefix "$HOME/.local" --completion-shell zsh
+
+# 6) Confirm first-run guidance and install/pack health
+pack --version
+pack setup --shell zsh
+pack doctor
 ```
 
 Build every workspace binary, including the MCP server:
@@ -280,7 +287,8 @@ pack search "citation"
 | `pack serve` / `pack open` | Run the localhost JSON API and static viewer. |
 | `pack export` / `pack import` / `pack bundle` | Move context and assets across tools or machines. |
 | `pack watch [--once]` | Poll `_inbox`, process, and incrementally index. |
-| `pack doctor [--json]` | Diagnose install and pack health. |
+| `pack doctor [--json]` | Diagnose install and pack health; prints next steps when setup is incomplete. |
+| `pack setup [--shell bash\|zsh\|fish]` | Print the first-run setup checklist. |
 | `pack duplicates` / `orphans` / `gaps` | Maintain knowledge quality. |
 | `pack topics` / `recommend` | Build tag topic maps and relation suggestions. |
 | `pack enrich-pending` | Run external media provider workers safely. |
