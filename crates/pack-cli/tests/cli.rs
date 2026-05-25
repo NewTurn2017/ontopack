@@ -17,6 +17,7 @@ fn init_creates_pack() {
 }
 
 #[test]
+#[cfg(not(windows))]
 fn init_escapes_pack_name_for_toml() {
     let dir = tempdir().unwrap();
     let root = dir.path().join("bad\"pack");
@@ -114,7 +115,7 @@ fn add_binary_escapes_sidecar_yaml() {
         .assert()
         .success();
 
-    let img = dir.path().join("a: b.png");
+    let img = dir.path().join("a # b.png");
     std::fs::write(&img, [0x89, 0x50, 0x4e, 0x47]).unwrap();
 
     Command::cargo_bin("pack")
@@ -856,16 +857,18 @@ json.dump({
     .unwrap();
     make_executable(&provider);
 
-    Command::cargo_bin("pack")
-        .unwrap()
+    let (provider_command, provider_args) = provider_invocation(&provider);
+    let mut command = Command::cargo_bin("pack").unwrap();
+    command
         .current_dir(&root)
-        .args([
-            "enrich-pending",
-            "--provider-command",
-            provider.to_str().unwrap(),
-            "--limit",
-            "1",
-        ])
+        .arg("enrich-pending")
+        .arg("--provider-command")
+        .arg(provider_command);
+    for arg in provider_args {
+        command.arg(arg);
+    }
+    command
+        .args(["--limit", "1"])
         .assert()
         .success()
         .stdout(predicate::str::contains("processed=1"))
@@ -917,16 +920,18 @@ fn bundled_fixture_provider_enriches_media() {
         .assert()
         .success();
 
-    Command::cargo_bin("pack")
-        .unwrap()
+    let (provider_command, provider_args) = provider_invocation(&provider);
+    let mut command = Command::cargo_bin("pack").unwrap();
+    command
         .current_dir(&root)
-        .args([
-            "enrich-pending",
-            "--provider-command",
-            provider.to_str().unwrap(),
-            "--limit",
-            "1",
-        ])
+        .arg("enrich-pending")
+        .arg("--provider-command")
+        .arg(provider_command);
+    for arg in provider_args {
+        command.arg(arg);
+    }
+    command
+        .args(["--limit", "1"])
         .assert()
         .success()
         .stdout(predicate::str::contains("processed=1"));
@@ -1675,3 +1680,16 @@ fn make_executable(path: &std::path::Path) {
 
 #[cfg(not(unix))]
 fn make_executable(_path: &std::path::Path) {}
+
+#[cfg(windows)]
+fn provider_invocation(script: &std::path::Path) -> (std::ffi::OsString, Vec<std::ffi::OsString>) {
+    (
+        std::ffi::OsString::from("py"),
+        vec![script.as_os_str().to_os_string()],
+    )
+}
+
+#[cfg(not(windows))]
+fn provider_invocation(script: &std::path::Path) -> (std::ffi::OsString, Vec<std::ffi::OsString>) {
+    (script.as_os_str().to_os_string(), Vec::new())
+}
