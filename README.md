@@ -30,7 +30,7 @@
 
 | Topic | Link |
 | --- | --- |
-| Official-style tutorial page | [`docs/index.html`](docs/index.html) · GitHub Pages after publish: `https://newturn2017.github.io/ontopack/` |
+| Wiki-style web docs | [`docs/index.html`](docs/index.html) · GitHub Pages after publish: `https://newturn2017.github.io/ontopack/` |
 | 5-minute MVP runbook | [`docs/mvp.md`](docs/mvp.md) |
 | MCP setup | [`docs/mcp.md`](docs/mcp.md) |
 | Local viewer/API | [`docs/viewer.md`](docs/viewer.md) |

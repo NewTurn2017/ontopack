@@ -72,7 +72,7 @@ Force local even when an API key exists:
 ONTOPACK_PROVIDER_MODE=local pack enrich-pending --provider-command /path/to/ontopack/scripts/providers/auto_media_worker.py --limit 1
 ```
 
-## Windows future path (documented, not yet live-verified)
+## Windows provider path
 
 The provider contract is OS-neutral: an executable reads JSON from stdin and writes `EnrichmentPatch` JSON to stdout. For Windows, keep the same `pack enrich-pending --provider-command ...` command shape and install equivalents with winget/Chocolatey or native installers:
 
@@ -81,7 +81,7 @@ The provider contract is OS-neutral: an executable reads JSON from stdin and wri
 - FFmpeg Windows build in PATH for video/audio metadata/extraction.
 - whisper.cpp or another local STT executable in PATH for transcript workers; expose its model path through `WHISPER_MODEL`.
 
-No OntoPack storage format should change for Windows; only provider executable discovery/setup should vary. The current automated gates and real Whisper proof were run on macOS. Until a Windows runner is added, Windows support should be treated as storage-format compatible but runtime-unverified.
+No OntoPack storage format should change for Windows; only provider executable discovery/setup should vary. GitHub Actions now exercises the Windows storage/smoke path and the fixture Python provider loop via `--provider-command py --provider-arg ...`. Local Ollama/Tesseract/FFmpeg/whisper runtime availability still depends on the Windows machine setup, so keep local media-tool proof separate from storage compatibility.
 
 Portability notes for Windows:
 

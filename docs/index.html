@@ -3,215 +3,711 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>OntoPack · Local-first knowledge packs</title>
+  <meta name="description" content="OntoPack wiki: local-first knowledge packs, CLI, viewer, MCP, media enrichment, portability, and release operations." />
+  <title>OntoPack 북 · Local-first knowledge packs</title>
   <style>
     :root {
       color-scheme: dark;
-      --bg: #070a12;
-      --panel: rgba(16, 24, 40, 0.72);
-      --panel-2: rgba(5, 150, 105, 0.10);
-      --text: #e5f0ff;
-      --muted: #94a3b8;
-      --line: rgba(148, 163, 184, 0.22);
-      --green: #4ade80;
-      --cyan: #22d3ee;
-      --violet: #a78bfa;
+      --bg: #090c12;
+      --bg-2: #0c1018;
+      --sidebar: #0f1420;
+      --panel: #111827;
+      --panel-soft: rgba(30, 41, 59, 0.72);
+      --text: #e5edf7;
+      --muted: #98a4b5;
+      --muted-2: #64748b;
+      --line: rgba(148, 163, 184, 0.18);
+      --line-strong: rgba(148, 163, 184, 0.34);
+      --brand: #58a6ff;
+      --brand-2: #7c3aed;
+      --green: #46d47d;
       --amber: #fbbf24;
-      --code: #0b1020;
+      --red: #fb7185;
+      --code: #0a0f1a;
+      --shadow: 0 30px 80px rgba(0, 0, 0, 0.38);
+      --radius: 16px;
+      --sidebar-w: 294px;
+      --toc-w: 250px;
     }
+
     * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
     body {
       margin: 0;
-      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background:
-        radial-gradient(circle at 20% 0%, rgba(34, 211, 238, 0.18), transparent 28rem),
-        radial-gradient(circle at 80% 10%, rgba(167, 139, 250, 0.17), transparent 24rem),
-        linear-gradient(180deg, #070a12 0%, #090d17 45%, #05070d 100%);
+      min-height: 100vh;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+      background: var(--bg);
       color: var(--text);
-      line-height: 1.65;
+      line-height: 1.7;
     }
-    a { color: var(--cyan); text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    .wrap { width: min(1120px, calc(100% - 32px)); margin: 0 auto; }
-    header { padding: 28px 0 8px; position: sticky; top: 0; z-index: 2; backdrop-filter: blur(18px); background: rgba(7, 10, 18, 0.72); border-bottom: 1px solid var(--line); }
-    nav { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
-    .brand { font-weight: 800; letter-spacing: 0.02em; }
-    .brand span { color: var(--green); }
-    .navlinks { display: flex; gap: 16px; flex-wrap: wrap; font-size: 14px; }
-    .hero { padding: 72px 0 42px; display: grid; grid-template-columns: 1.06fr 0.94fr; gap: 32px; align-items: center; }
-    .eyebrow { color: var(--green); font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; font-size: 12px; }
-    h1 { font-size: clamp(42px, 7vw, 78px); line-height: 0.95; margin: 14px 0 20px; letter-spacing: -0.06em; }
-    .lead { font-size: clamp(18px, 2.5vw, 23px); color: #cbd5e1; max-width: 760px; }
-    .cta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 28px; }
-    .btn { display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 999px; padding: 12px 18px; font-weight: 700; background: rgba(15, 23, 42, 0.72); color: var(--text); }
-    .btn.primary { background: linear-gradient(135deg, rgba(34, 211, 238, 0.22), rgba(74, 222, 128, 0.20)); border-color: rgba(34, 211, 238, 0.48); }
-    .terminal { background: rgba(3, 7, 18, 0.88); border: 1px solid rgba(34, 211, 238, 0.25); border-radius: 22px; box-shadow: 0 24px 80px rgba(0,0,0,.48); overflow: hidden; }
-    .terminal-bar { height: 42px; display: flex; align-items: center; gap: 8px; padding: 0 16px; border-bottom: 1px solid var(--line); }
-    .dot { width: 11px; height: 11px; border-radius: 50%; background: #ef4444; }
-    .dot:nth-child(2) { background: #f59e0b; } .dot:nth-child(3) { background: #22c55e; }
-    pre { margin: 0; padding: 22px; overflow: auto; background: var(--code); color: #d1fae5; font-size: 14px; line-height: 1.55; }
-    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
-    section { padding: 44px 0; }
-    h2 { font-size: clamp(28px, 4vw, 44px); margin: 0 0 18px; letter-spacing: -0.04em; }
-    h3 { margin-top: 0; }
-    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-    .card { border: 1px solid var(--line); border-radius: 22px; padding: 22px; background: var(--panel); }
-    .card strong { color: #fff; }
+    a { color: inherit; text-decoration: none; }
+    a:hover { color: #fff; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    code {
+      padding: 0.12rem 0.34rem;
+      border-radius: 6px;
+      background: rgba(148, 163, 184, 0.14);
+      color: #dbeafe;
+      font-size: 0.88em;
+    }
+    pre {
+      margin: 16px 0 0;
+      padding: 18px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--code);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.035);
+    }
+    pre code { padding: 0; background: transparent; color: #d1fae5; font-size: 13px; }
+
+    .topbar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 30;
+      height: 58px;
+      display: grid;
+      grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--toc-w);
+      align-items: center;
+      border-bottom: 1px solid var(--line);
+      background: rgba(9, 12, 18, 0.88);
+      backdrop-filter: blur(16px);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 18px;
+      font-weight: 800;
+      letter-spacing: 0.01em;
+      color: #cfe6ff;
+    }
+    .logo {
+      width: 30px; height: 30px;
+      display: grid; place-items: center;
+      border: 1px solid rgba(88, 166, 255, 0.45);
+      border-radius: 9px;
+      background: radial-gradient(circle at 35% 20%, rgba(124,58,237,.55), transparent 40%), rgba(2, 6, 23, 0.96);
+      color: var(--green);
+      font-size: 16px;
+      box-shadow: 0 0 26px rgba(88, 166, 255, 0.17);
+    }
+    .searchbox {
+      justify-self: center;
+      width: min(420px, calc(100% - 32px));
+      position: relative;
+    }
+    .searchbox input {
+      width: 100%;
+      height: 38px;
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
+      background: rgba(2, 6, 23, 0.55);
+      color: var(--text);
+      padding: 0 42px 0 40px;
+      outline: none;
+    }
+    .searchbox input:focus { border-color: rgba(88, 166, 255, 0.72); box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.12); }
+    .searchbox .mag { position: absolute; left: 13px; top: 8px; color: var(--muted); }
+    .searchbox .kbd { position: absolute; right: 10px; top: 8px; color: var(--muted-2); font-size: 12px; }
+    .top-actions {
+      justify-self: end;
+      padding-right: 18px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .top-actions a { color: var(--brand); }
+
+    .layout {
+      display: grid;
+      grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--toc-w);
+      min-height: 100vh;
+      padding-top: 58px;
+    }
+    .sidebar {
+      position: sticky;
+      top: 58px;
+      align-self: start;
+      height: calc(100vh - 58px);
+      overflow: auto;
+      border-right: 1px solid var(--line);
+      background: var(--sidebar);
+      padding: 18px 14px 28px;
+    }
+    .sidebar-group { margin-bottom: 18px; }
+    .sidebar-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: #f8fafc;
+      font-size: 13px;
+      font-weight: 800;
+      margin: 0 0 7px;
+    }
+    .sidebar-title span:last-child { color: var(--muted-2); font-weight: 600; }
+    .side-link {
+      display: block;
+      padding: 7px 12px;
+      border-radius: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+    .side-link:hover, .side-link.active {
+      color: #fff;
+      background: rgba(88, 166, 255, 0.14);
+    }
+    .side-link.external { color: #a7f3d0; }
+
+    main {
+      min-width: 0;
+      border-right: 1px solid var(--line);
+      background:
+        radial-gradient(circle at 20% 0%, rgba(88, 166, 255, 0.08), transparent 26rem),
+        linear-gradient(180deg, rgba(15, 23, 42, 0.42), transparent 22rem);
+    }
+    .content {
+      width: min(900px, calc(100% - 56px));
+      margin: 0 auto;
+      padding: 44px 0 84px;
+    }
+    .hero {
+      padding: 8px 0 34px;
+      border-bottom: 1px solid var(--line);
+    }
+    .eyebrow {
+      color: var(--brand);
+      font-weight: 800;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      font-size: 12px;
+    }
+    h1 {
+      margin: 12px 0 18px;
+      font-size: clamp(42px, 6vw, 76px);
+      line-height: 0.98;
+      letter-spacing: -0.065em;
+    }
+    .lead {
+      max-width: 760px;
+      margin: 0;
+      color: #cbd5e1;
+      font-size: clamp(17px, 2vw, 22px);
+    }
+    .hero-grid {
+      margin-top: 26px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .metric, .card, .callout {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(17, 24, 39, 0.74);
+      box-shadow: 0 1px 0 rgba(255,255,255,0.035) inset;
+    }
+    .metric { padding: 15px; }
+    .metric strong { display: block; color: #fff; font-size: 18px; }
+    .metric span { color: var(--muted); font-size: 12px; }
+
+    section.doc-section {
+      padding: 42px 0;
+      border-bottom: 1px solid var(--line);
+      scroll-margin-top: 78px;
+    }
+    h2 {
+      margin: 0 0 14px;
+      font-size: clamp(28px, 4vw, 42px);
+      line-height: 1.12;
+      letter-spacing: -0.045em;
+    }
+    h3 {
+      margin: 26px 0 10px;
+      font-size: 21px;
+      letter-spacing: -0.02em;
+    }
+    p { color: #cbd5e1; }
+    ul, ol { color: #cbd5e1; padding-left: 1.3rem; }
+    li + li { margin-top: 0.35rem; }
     .muted { color: var(--muted); }
-    .steps { display: grid; gap: 16px; }
-    .step { display: grid; grid-template-columns: 58px 1fr; gap: 18px; align-items: start; }
-    .num { width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center; font-weight: 800; color: #04111d; background: linear-gradient(135deg, var(--cyan), var(--green)); }
-    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-    .pillrow { display: flex; gap: 10px; flex-wrap: wrap; }
-    .pill { border: 1px solid var(--line); padding: 7px 11px; border-radius: 999px; color: #cbd5e1; background: rgba(15,23,42,.7); font-size: 13px; }
-    footer { border-top: 1px solid var(--line); padding: 28px 0 48px; color: var(--muted); }
-    @media (max-width: 860px) { .hero, .grid, .split { grid-template-columns: 1fr; } header { position: static; } }
+    .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+    .card { padding: 18px; }
+    .card h3 { margin-top: 0; }
+    .card p:last-child { margin-bottom: 0; }
+    .callout {
+      padding: 18px;
+      background: linear-gradient(135deg, rgba(88, 166, 255, 0.11), rgba(70, 212, 125, 0.07));
+    }
+    .callout.warning { background: linear-gradient(135deg, rgba(251, 191, 36, 0.12), rgba(251, 113, 133, 0.07)); }
+    .badge-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0; }
+    .badge {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 5px 10px;
+      color: #cbd5e1;
+      background: rgba(15, 23, 42, 0.7);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .badge.ok { color: #bbf7d0; border-color: rgba(70, 212, 125, .38); }
+    .badge.warn { color: #fde68a; border-color: rgba(251, 191, 36, .42); }
+    .command-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      display: table;
+    }
+    .command-table th, .command-table td {
+      border-bottom: 1px solid var(--line);
+      padding: 11px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .command-table th { color: #fff; background: rgba(148, 163, 184, 0.09); }
+    .command-table td { color: #cbd5e1; }
+    .command-table tr:last-child td { border-bottom: 0; }
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      margin: 18px 0;
+    }
+    .flow-step {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(15, 23, 42, 0.78);
+      color: #dbeafe;
+      font-size: 13px;
+    }
+    .flow-step strong { display: block; color: #fff; margin-bottom: 4px; }
+    .toc {
+      position: sticky;
+      top: 58px;
+      align-self: start;
+      height: calc(100vh - 58px);
+      overflow: auto;
+      padding: 18px 16px 28px;
+      background: var(--bg);
+    }
+    .toc h2 {
+      margin: 0 0 10px;
+      font-size: 14px;
+      letter-spacing: 0;
+    }
+    .toc a {
+      display: block;
+      padding: 5px 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .toc a:hover, .toc a.active { color: #fff; }
+    .doc-links a {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--line);
+      color: #dbeafe;
+    }
+    .doc-links span { color: var(--muted); font-size: 13px; }
+    .empty-state { display: none; padding: 20px; color: var(--muted); }
+
+    @media (max-width: 1180px) {
+      :root { --sidebar-w: 260px; --toc-w: 210px; }
+      .hero-grid, .flow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .grid-3 { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 920px) {
+      .topbar { grid-template-columns: 1fr; height: auto; gap: 10px; padding: 10px 12px; }
+      .brand { padding: 0; }
+      .searchbox { width: 100%; }
+      .top-actions { display: none; }
+      .layout { display: block; padding-top: 104px; }
+      .sidebar, .toc { position: static; height: auto; border: 0; }
+      .sidebar { border-bottom: 1px solid var(--line); }
+      main { border-right: 0; }
+      .content { width: min(100% - 28px, 900px); }
+      .grid-2, .hero-grid, .flow { grid-template-columns: 1fr; }
+      .command-table { display: block; overflow-x: auto; }
+    }
   </style>
 </head>
 <body>
-  <header>
-    <nav class="wrap">
-      <div class="brand"><span>●</span> OntoPack</div>
-      <div class="navlinks">
-        <a href="#install">Install</a>
-        <a href="#tutorial-ko">한국어 튜토리얼</a>
-        <a href="#tutorial-en">Tutorial</a>
-        <a href="#mcp">MCP</a>
-        <a href="https://github.com/NewTurn2017/ontopack#readme">README</a>
-      </div>
-    </nav>
+  <header class="topbar">
+    <a class="brand" href="#overview" aria-label="OntoPack home"><span class="logo">⌘</span><span>OntoPack 북</span></a>
+    <label class="searchbox" aria-label="문서 검색">
+      <span class="mag">⌕</span>
+      <input id="doc-search" type="search" placeholder="검색: MCP, bundle, Windows, provider, real-embed..." autocomplete="off" />
+      <span class="kbd">/</span>
+    </label>
+    <div class="top-actions">
+      <a href="https://github.com/NewTurn2017/ontopack">GitHub</a>
+      <span>Dark</span>
+    </div>
   </header>
 
-  <main class="wrap">
-    <section class="hero">
-      <div>
-        <div class="eyebrow">local-first · portable · agent-ready</div>
-        <h1>Build knowledge packs you can actually move.</h1>
-        <p class="lead">OntoPack turns Markdown, assets, citations, and media enrichment into a local folder that can be searched, served, bundled, restored, and exposed to AI agents through MCP.</p>
-        <div class="cta">
-          <a class="btn primary" href="#install">Start in 5 minutes</a>
-          <a class="btn" href="https://github.com/NewTurn2017/ontopack">GitHub</a>
-          <a class="btn" href="mvp.md">MVP runbook</a>
-        </div>
+  <div class="layout">
+    <aside class="sidebar" aria-label="문서 목차">
+      <div class="sidebar-group">
+        <p class="sidebar-title">처음 이해하기 <span>01</span></p>
+        <a class="side-link" href="#overview">OntoPack 개요</a>
+        <a class="side-link" href="#why">왜 필요한가</a>
+        <a class="side-link" href="#mental-model">핵심 모델</a>
+        <a class="side-link" href="#quickstart">5분 체험</a>
       </div>
-      <div class="terminal" aria-label="terminal demo">
-        <div class="terminal-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
-        <pre><code>$ pack init research-pack
-$ cd research-pack
-$ cp ~/Downloads/slide.png _inbox/
-$ pack process && pack build --incremental
-$ pack search "ontology" --mode keyword
-
-[keyword] Knowledge Graph Primer
-  note: graph-primer / graph-primer#0000
-  snippet: ontology, relation, entity...</code></pre>
+      <div class="sidebar-group">
+        <p class="sidebar-title">설치와 운영 <span>02</span></p>
+        <a class="side-link" href="#install">설치</a>
+        <a class="side-link" href="#windows">Windows 경로</a>
+        <a class="side-link" href="#release">릴리스/CI</a>
+        <a class="side-link" href="#verify">검증 루틴</a>
       </div>
-    </section>
-
-    <section>
-      <div class="grid">
-        <div class="card"><h3>Readable by default</h3><p class="muted">Markdown and assets remain the source of truth. The database is a rebuildable derived index.</p></div>
-        <div class="card"><h3>MCP without mystery</h3><p class="muted">The MCP server returns context blocks and citations. Your agent writes the final answer.</p></div>
-        <div class="card"><h3>Portable across machines</h3><p class="muted">Bundle a pack into a directory or tar.gz archive, import it elsewhere, then rebuild locally.</p></div>
+      <div class="sidebar-group">
+        <p class="sidebar-title">팩 워크플로 <span>03</span></p>
+        <a class="side-link" href="#capture">캡처와 처리</a>
+        <a class="side-link" href="#search">검색과 인덱스</a>
+        <a class="side-link" href="#viewer">로컬 뷰어</a>
+        <a class="side-link" href="#portable">번들/복원</a>
       </div>
-    </section>
+      <div class="sidebar-group">
+        <p class="sidebar-title">AI/미디어 <span>04</span></p>
+        <a class="side-link" href="#mcp">MCP 서버</a>
+        <a class="side-link" href="#providers">Provider workers</a>
+        <a class="side-link" href="#semantic">real-embed</a>
+        <a class="side-link" href="#visible-pack">보이는 온톨로지 팩</a>
+      </div>
+      <div class="sidebar-group">
+        <p class="sidebar-title">참조 <span>05</span></p>
+        <a class="side-link" href="#commands">명령 치트시트</a>
+        <a class="side-link" href="#docs-map">문서 지도</a>
+        <a class="side-link" href="#roadmap">다음 우선순위</a>
+        <a class="side-link external" href="https://github.com/NewTurn2017/ontopack#readme">README ↗</a>
+      </div>
+    </aside>
 
-    <section id="install">
-      <h2>Install from GitHub</h2>
-      <div class="split">
-        <div class="card">
-          <h3>macOS / Linux</h3>
-          <pre><code>git clone https://github.com/NewTurn2017/ontopack.git
+    <main>
+      <div class="content" id="content">
+        <section class="hero searchable" id="overview" data-title="OntoPack 개요 local-first portable MCP OSS">
+          <div class="eyebrow">local-first · portable · agent-ready</div>
+          <h1>로컬 지식을 이동 가능한 팩으로 만든다.</h1>
+          <p class="lead">OntoPack은 Markdown, assets, 검색 인덱스, citation-ready context, 미디어 enrichment를 한 폴더에 묶는 Rust 기반 OSS 지식 팩 엔진입니다. 이 페이지는 README보다 더 빠르게 전체 구조를 이해하도록 만든 wiki형 안내서입니다.</p>
+          <div class="hero-grid">
+            <div class="metric"><strong>Plain files</strong><span>notes/*.md + assets/*가 원본</span></div>
+            <div class="metric"><strong>SQLite cache</strong><span>검색 DB는 재생성 가능한 파생물</span></div>
+            <div class="metric"><strong>MCP-ready</strong><span>AI 에이전트에 citation context 제공</span></div>
+            <div class="metric"><strong>CI proven</strong><span>macOS · Linux · Windows smoke</span></div>
+          </div>
+        </section>
+
+        <section class="doc-section searchable" id="why" data-title="왜 필요한가 문제 OSS 이해 source of truth agent memory">
+          <h2>왜 필요한가</h2>
+          <p>노트 앱, 벡터 DB, 미디어 폴더, 에이전트 메모리가 따로 움직이면 지식은 금방 깨집니다. OntoPack은 <strong>사람이 읽는 파일</strong>을 원본으로 두고, 검색/뷰어/MCP/번들은 모두 그 원본에서 다시 만들 수 있게 설계합니다.</p>
+          <div class="grid-3">
+            <div class="card"><h3>학습/강의</h3><p>자료, 이미지, 영상, 소스 카드를 하나의 강의 팩으로 관리합니다.</p></div>
+            <div class="card"><h3>에이전트 컨텍스트</h3><p>LLM에게 답을 맡기기 전에 citation-ready context block을 안정적으로 넘깁니다.</p></div>
+            <div class="card"><h3>운영 가능한 OSS</h3><p>Windows smoke, release workflow, test evidence로 “내 컴퓨터에서만 됨”을 줄입니다.</p></div>
+          </div>
+        </section>
+
+        <section class="doc-section searchable" id="mental-model" data-title="핵심 모델 pack.toml notes assets inbox index bundle import">
+          <h2>핵심 모델</h2>
+          <p>OntoPack 팩은 특별한 서버가 아니라 디렉터리입니다. 원본과 파생물을 분리해서, 사람이 편집해도 다시 빌드할 수 있습니다.</p>
+          <div class="flow" aria-label="OntoPack workflow">
+            <div class="flow-step"><strong>1. Capture</strong><code>_inbox/</code>에 노트/미디어 투입</div>
+            <div class="flow-step"><strong>2. Process</strong><code>notes/</code>, <code>assets/</code>로 정리</div>
+            <div class="flow-step"><strong>3. Build</strong><code>.pack/index.db</code> 재생성</div>
+            <div class="flow-step"><strong>4. Use</strong>검색, 뷰어, MCP, AI worker</div>
+            <div class="flow-step"><strong>5. Move</strong>export/bundle/import로 이동</div>
+          </div>
+          <pre><code>my-pack/
+├─ pack.toml              # 팩 설정
+├─ notes/*.md             # 사람이 읽고 수정하는 지식 원본
+├─ assets/*               # 이미지/영상/오디오/PDF 등 원본 파일
+├─ _inbox/*               # 임시 수집함
+└─ .pack/index.db         # 재생성 가능한 검색 캐시</code></pre>
+        </section>
+
+        <section class="doc-section searchable" id="quickstart" data-title="5분 체험 quickstart tutorial process build search open bundle">
+          <h2>5분 체험</h2>
+          <p>설치 후 아래 명령만으로 “노트 생성 → 처리 → 검색 → 로컬 wiki 열기 → 이동 가능한 번들”까지 확인합니다.</p>
+          <pre><code>pack init ~/ontopack-demo
+cd ~/ontopack-demo
+
+cat > _inbox/hook.md <<'NOTE'
+---
+type: prompt
+title: 썸네일 훅
+tags: [youtube, hook]
+created: 2026-05-24
+---
+클릭을 부르는 훅 카피와 강의 오프닝 구조.
+NOTE
+
+pack process
+pack build --incremental
+pack search "훅" --mode keyword
+pack open
+pack bundle ../ontopack-demo-bundle --archive ../ontopack-demo.tar.gz</code></pre>
+          <div class="callout"><strong>성공 기준:</strong> 검색 결과에 <code>[keyword]</code>, <code>note_id</code>, <code>chunk_id</code>가 보이고, <code>pack open</code>에서 로컬 뷰어가 열리면 기본 경로가 살아 있습니다.</div>
+        </section>
+
+        <section class="doc-section searchable" id="install" data-title="설치 install cargo build release prebuilt binary mac linux">
+          <h2>설치</h2>
+          <div class="grid-2">
+            <div class="card"><h3>macOS / Linux source build</h3><pre><code>git clone https://github.com/NewTurn2017/ontopack.git
 cd ontopack
 cargo build --release -p pack-cli
 ./target/release/pack --help
-scripts/install.sh --prefix "$HOME/.local" --completion-shell zsh</code></pre>
-        </div>
-        <div class="card">
-          <h3>Windows / Parallels</h3>
+scripts/install.sh --prefix "$HOME/.local" --completion-shell zsh</code></pre></div>
+            <div class="card"><h3>전체 workspace 빌드</h3><pre><code>cargo build --release
+./target/release/pack-mcp --help
+cargo test --workspace --locked</code></pre></div>
+          </div>
+          <p class="muted">공개 tagged binary release는 아직 첫 태그를 자르기 전입니다. release workflow는 준비되어 있으므로 태그 발행 후 macOS/Linux/Windows archive와 checksum이 생성되는지 확인하면 됩니다.</p>
+        </section>
+
+        <section class="doc-section searchable" id="windows" data-title="Windows Parallels PowerShell portability smoke provider py">
+          <h2>Windows 경로</h2>
+          <p>OntoPack은 pack-relative path를 forward slash로 유지하고, Rust path join으로 OS별 파일 시스템에 맞춥니다. Windows CI는 기본 CLI test와 smoke를 실행합니다.</p>
           <pre><code>git clone https://github.com/NewTurn2017/ontopack.git
 cd ontopack
 cargo build --release -p pack-cli
 .\target\release\pack.exe --help
 powershell -ExecutionPolicy Bypass -File .\scripts\windows-smoke.ps1 -PackBin .\target\release\pack.exe</code></pre>
-        </div>
-      </div>
-    </section>
+          <div class="callout warning"><strong>Provider worker 팁:</strong> Windows에서 Python <code>.py</code>를 직접 실행할 수 없으면 <code>--provider-command py --provider-arg scripts\providers\auto_media_worker.py</code>처럼 Python launcher를 명시합니다.</div>
+        </section>
 
-    <section id="tutorial-ko">
-      <h2>한국어 5분 튜토리얼</h2>
-      <div class="steps">
-        <div class="step"><div class="num">1</div><div><h3>팩 생성</h3><pre><code>pack init ~/ontopack-demo
-cd ~/ontopack-demo</code></pre></div></div>
-        <div class="step"><div class="num">2</div><div><h3>노트 추가</h3><pre><code>cat > _inbox/hook.md <<'NOTE'
----
-type: prompt
-title: 썸네일 훅
-tags: [youtube, hook]
----
-클릭을 부르는 훅 카피와 강의 오프닝 구조.
-NOTE</code></pre></div></div>
-        <div class="step"><div class="num">3</div><div><h3>처리·검색·뷰어</h3><pre><code>pack process
-pack build --incremental
-pack search "훅"
-pack open</code></pre></div></div>
-        <div class="step"><div class="num">4</div><div><h3>이동 가능한 번들</h3><pre><code>pack bundle ../demo-bundle --archive ../demo.tar.gz</code></pre></div></div>
-      </div>
-    </section>
+        <section class="doc-section searchable" id="release" data-title="릴리스 CI GitHub Actions release workflow artifacts checksum MIT">
+          <h2>릴리스/CI</h2>
+          <div class="badge-row">
+            <span class="badge ok">MIT LICENSE</span>
+            <span class="badge ok">CI: macOS/Linux/Windows</span>
+            <span class="badge ok">release workflow exists</span>
+            <span class="badge warn">tagged binary release pending</span>
+          </div>
+          <p>현재 운영 기준선은 <code>.github/workflows/ci.yml</code>과 <code>.github/workflows/release.yml</code>입니다. CI는 formatting, tests, clippy, release binary build, Unix MVP smoke, Windows portability smoke를 실행합니다.</p>
+          <pre><code># 로컬에서 push 전 최소 검증
+cargo fmt --check
+cargo test -q
+cargo clippy --all-targets -- -D warnings
+scripts/mvp-smoke.sh
+scripts/real-test.sh</code></pre>
+        </section>
 
-    <section id="tutorial-en">
-      <h2>English 5-minute tutorial</h2>
-      <div class="steps">
-        <div class="step"><div class="num">1</div><div><h3>Create</h3><pre><code>pack init ~/ontopack-demo
-cd ~/ontopack-demo</code></pre></div></div>
-        <div class="step"><div class="num">2</div><div><h3>Capture</h3><pre><code>cat > _inbox/source-card.md <<'NOTE'
----
-type: note
-title: Source Cards
-tags: [research, citation]
----
-A source card keeps useful context and citations.
-NOTE</code></pre></div></div>
-        <div class="step"><div class="num">3</div><div><h3>Search and serve</h3><pre><code>pack process
-pack build --incremental
-pack search "citation"
-pack open --port 0 --no-browser --print-url</code></pre></div></div>
-        <div class="step"><div class="num">4</div><div><h3>Move it</h3><pre><code>pack bundle ../demo-bundle --archive ../demo.tar.gz
+        <section class="doc-section searchable" id="verify" data-title="검증 루틴 doctor smoke test evidence docs test-results">
+          <h2>검증 루틴</h2>
+          <p>기능을 추가할 때는 “명령이 실행된다”보다 “사용자가 신뢰할 수 있는 증거가 남는다”를 기준으로 봅니다.</p>
+          <ol>
+            <li><strong>작은 변경:</strong> 관련 단위 테스트 + <code>cargo fmt --check</code>.</li>
+            <li><strong>CLI 동작 변경:</strong> <code>cargo test -q</code> + <code>cargo clippy --all-targets -- -D warnings</code>.</li>
+            <li><strong>운영/릴리스 변경:</strong> smoke script, workflow YAML parse, GitHub Actions run URL까지 기록.</li>
+            <li><strong>문서 변경:</strong> 링크, 코드 블록, 실제 명령 이름이 현재 CLI와 맞는지 확인.</li>
+          </ol>
+        </section>
+
+        <section class="doc-section searchable" id="capture" data-title="캡처 처리 process add inbox notes assets frontmatter">
+          <h2>캡처와 처리</h2>
+          <p><code>pack add</code>는 바로 추가하고, <code>pack process</code>는 <code>_inbox/</code>를 한 번에 정리합니다. Markdown/text는 <code>notes/</code>, 바이너리 파일은 <code>assets/</code>와 sidecar note로 들어갑니다.</p>
+          <pre><code>pack add ~/Downloads/source.md --type note
+pack add ~/Downloads/board.png --type image
+pack process
+pack status --json
+pack list --pending-enrichment</code></pre>
+        </section>
+
+        <section class="doc-section searchable" id="search" data-title="검색 index FTS keyword vector hybrid real embed citations source cards">
+          <h2>검색과 인덱스</h2>
+          <p>기본 검색은 SQLite FTS5 keyword search입니다. 인덱스는 <code>notes/</code>와 enrichment block에서 재생성할 수 있으므로 안전하게 삭제/재빌드할 수 있습니다.</p>
+          <pre><code>pack build --incremental
+pack search "ontology" --mode keyword -k 5
+pack duplicates
+pack gaps
+pack topics
+pack recommend graph-primer</code></pre>
+          <p class="muted">semantic/vector/hybrid는 <code>real-embed</code> feature로 빌드한 뒤 <code>pack embed</code>를 먼저 실행해야 합니다.</p>
+        </section>
+
+        <section class="doc-section searchable" id="viewer" data-title="로컬 뷰어 wiki gallery graph search open serve viewer API">
+          <h2>로컬 뷰어</h2>
+          <p><code>pack open</code>은 별도 프론트엔드 빌드 없이 binary가 localhost wiki/gallery/search UI를 서빙합니다. 원격/자동화 환경에서는 URL만 출력할 수 있습니다.</p>
+          <pre><code>pack open
+pack open --port 0 --no-browser --print-url
+pack serve --host 127.0.0.1 --port 0</code></pre>
+          <div class="callout"><strong>좋은 OSS 데모:</strong> README만 보여주기보다 샘플 팩을 열어 검색, 갤러리, 그래프, source card를 한 화면에서 보여주면 이해 속도가 빨라집니다.</div>
+        </section>
+
+        <section class="doc-section searchable" id="portable" data-title="portable bundle export import archive tar gz context jsonl assets restore">
+          <h2>번들/복원</h2>
+          <p>OntoPack의 운영 강점은 “다른 머신으로 옮겨도 다시 검색 가능한 팩”입니다. directory bundle과 <code>tar.gz</code> archive를 모두 지원합니다.</p>
+          <pre><code>pack export --format jsonl --output context.jsonl
+pack bundle ../demo-bundle --archive ../demo.tar.gz
+
 pack init ../restored-pack
 cd ../restored-pack
-pack import ../demo.tar.gz</code></pre></div></div>
-      </div>
-    </section>
+pack import ../demo.tar.gz
+pack build --no-embed
+pack search "ontology"</code></pre>
+        </section>
 
-    <section id="mcp">
-      <h2>MCP and media workflows</h2>
-      <div class="split">
-        <div class="card">
-          <h3>Agent context</h3>
+        <section class="doc-section searchable" id="mcp" data-title="MCP Claude Codex search ask related timeline media tools context blocks citations">
+          <h2>MCP 서버</h2>
+          <p><code>pack-mcp</code>는 OntoPack을 Claude/Codex 같은 에이전트가 호출할 수 있는 stdio MCP 서버로 노출합니다. 중요한 점은 서버가 답변을 생성하지 않고 <strong>citation-ready context blocks</strong>를 반환한다는 것입니다.</p>
           <pre><code>cargo build --release -p pack-mcp
-pack-mcp --pack-root /path/to/pack</code></pre>
-          <p class="muted">Use `search`, `ask`, `related`, `timeline`, and media tools from Claude/Codex.</p>
-        </div>
-        <div class="card">
-          <h3>Media enrichment</h3>
-          <pre><code>pack enrich-pending \
-  --provider-command scripts/providers/fixture_media_worker.py \
-  --limit 10</code></pre>
-          <p class="muted">Provider workers read JSON from stdin and write safe enrichment patches to stdout.</p>
-        </div>
-      </div>
-    </section>
+pack-mcp --pack-root /path/to/my-pack</code></pre>
+          <table class="command-table">
+            <thead><tr><th>도구</th><th>용도</th></tr></thead>
+            <tbody>
+              <tr><td><code>search</code>, <code>ask</code></td><td>검색 결과와 citation context block 반환</td></tr>
+              <tr><td><code>related</code>, <code>timeline</code></td><td>관계 탐색과 created frontmatter 기반 시간순 탐색</td></tr>
+              <tr><td><code>media/list_pending</code></td><td>AI caption/OCR/transcript가 필요한 asset sidecar 탐색</td></tr>
+              <tr><td><code>media/write_enrichment</code></td><td>사람이 쓴 본문을 보존하며 managed enrichment block 기록</td></tr>
+            </tbody>
+          </table>
+        </section>
 
-    <section>
-      <h2>What it is good for</h2>
-      <div class="pillrow">
-        <span class="pill">lecture packs</span><span class="pill">agent memory</span><span class="pill">citation search</span><span class="pill">local media KB</span><span class="pill">portable demos</span><span class="pill">MCP context</span><span class="pill">knowledge maintenance</span>
-      </div>
-    </section>
-  </main>
+        <section class="doc-section searchable" id="providers" data-title="provider workers media enrichment OCR caption transcript OpenAI Ollama Tesseract ffmpeg fixture">
+          <h2>Provider workers</h2>
+          <p>Provider worker는 stdin으로 payload JSON을 받고 stdout으로 enrichment patch JSON을 쓰는 실행 파일입니다. 저장 형식은 OntoPack이 지키고, 모델/도구 선택은 worker가 담당합니다.</p>
+          <pre><code># deterministic fixture worker
+pack enrich-pending --provider-command scripts/providers/fixture_media_worker.py --limit 10
 
-  <footer>
-    <div class="wrap">OntoPack is a pre-release local-first OSS-style project. Public source builds are available; choose a repository license before broad third-party reuse.</div>
-  </footer>
+# Windows Python launcher shape
+pack enrich-pending --provider-command py --provider-arg scripts\providers\fixture_media_worker.py --limit 10
+
+# recommended router
+ONTOPACK_PROVIDER_MODE=local pack enrich-pending --provider-command scripts/providers/auto_media_worker.py --limit 1</code></pre>
+          <p class="muted">지원 필드: <code>caption</code>, <code>tags</code>, <code>ocr</code>, <code>transcript</code>, <code>summary</code>, <code>keyframes</code>, <code>provider</code>, <code>model</code>.</p>
+        </section>
+
+        <section class="doc-section searchable" id="semantic" data-title="real embed vector hybrid BGE M3 FastEmbed semantic search">
+          <h2>real-embed</h2>
+          <p>기본 설치는 offline keyword-first입니다. semantic vector/hybrid search가 필요할 때만 feature를 켭니다.</p>
+          <pre><code>cargo build --release -p pack-cli --features real-embed
+./target/release/pack embed
+./target/release/pack search "ontology" --mode hybrid</code></pre>
+          <div class="callout warning"><strong>운영 메모:</strong> 첫 real-embed 실행은 FastEmbed/Hugging Face 경로로 모델을 다운로드/캐시할 수 있습니다. CI 기본 경로와 분리해두는 편이 안전합니다.</div>
+        </section>
+
+        <section class="doc-section searchable" id="visible-pack" data-title="visible ontology pack public web metadata demo 100 prompt image video">
+          <h2>보이는 온톨로지 팩</h2>
+          <p>OSS 설명은 실제 데이터가 보이면 훨씬 빨라집니다. OntoPack은 공개 웹 API 메타데이터로 prompt/image/video 각 100개를 가진 demo pack을 만들 수 있습니다.</p>
+          <pre><code>cargo build -p pack-cli
+python3 scripts/visible-ontology-pack.py \
+  --limit-each 100 \
+  --no-download-assets \
+  --output /tmp/ontopack-visible-live \
+  --pack-bin "$PWD/target/debug/pack" \
+  --build
+cd /tmp/ontopack-visible-live
+/path/to/ontopack/target/debug/pack open --no-browser --print-url</code></pre>
+        </section>
+
+        <section class="doc-section searchable" id="commands" data-title="명령 치트시트 CLI commands init add process build search open mcp bundle import doctor">
+          <h2>명령 치트시트</h2>
+          <table class="command-table">
+            <thead><tr><th>명령</th><th>언제 쓰나</th><th>대표 예시</th></tr></thead>
+            <tbody>
+              <tr><td><code>init</code></td><td>새 지식 팩 생성</td><td><code>pack init ~/my-pack</code></td></tr>
+              <tr><td><code>add</code>/<code>process</code></td><td>파일 수집과 정리</td><td><code>pack add board.png --type image</code></td></tr>
+              <tr><td><code>build</code>/<code>search</code></td><td>인덱스 생성과 검색</td><td><code>pack search "lecture" --mode keyword</code></td></tr>
+              <tr><td><code>open</code>/<code>serve</code></td><td>로컬 wiki/gallery UI</td><td><code>pack open --print-url</code></td></tr>
+              <tr><td><code>enrich-pending</code></td><td>미디어 caption/OCR/transcript</td><td><code>pack enrich-pending --provider-command ...</code></td></tr>
+              <tr><td><code>bundle</code>/<code>import</code></td><td>다른 머신으로 이동</td><td><code>pack bundle out --archive out.tar.gz</code></td></tr>
+              <tr><td><code>doctor</code></td><td>팩 건강 상태 확인</td><td><code>pack doctor</code></td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section class="doc-section searchable" id="docs-map" data-title="문서 지도 docs mvp mcp providers viewer system deep dive real test">
+          <h2>문서 지도</h2>
+          <div class="doc-links">
+            <a href="mvp.md"><strong>5-minute MVP runbook</strong><span>가장 짧은 end-to-end 검증</span></a>
+            <a href="mcp.md"><strong>MCP setup</strong><span>Claude/Codex 연결과 tool 계약</span></a>
+            <a href="viewer.md"><strong>Local viewer/API</strong><span>pack open/serve와 viewer endpoint</span></a>
+            <a href="providers.md"><strong>Media providers</strong><span>local/API/fixture worker 계약</span></a>
+            <a href="system-deep-dive.md"><strong>System deep dive</strong><span>아키텍처와 저장/검색 내부</span></a>
+            <a href="real-test.md"><strong>Real test notes</strong><span>실제 환경 검증 기록</span></a>
+          </div>
+        </section>
+
+        <section class="doc-section searchable" id="roadmap" data-title="다음 우선순위 roadmap OSS docs release examples onboarding">
+          <h2>다음 우선순위</h2>
+          <ol>
+            <li><strong>첫 public release tag:</strong> release workflow가 산출하는 archive/checksum을 실제로 내려받아 smoke합니다.</li>
+            <li><strong>문서 사이트 분화:</strong> 이 wiki형 landing을 기준으로 설치, 튜토리얼, MCP, provider, 운영 runbook을 독립 HTML 페이지로 나눕니다.</li>
+            <li><strong>샘플 팩 배포:</strong> fixture 기반 demo pack을 release artifact나 docs asset으로 제공해 “보이는 이해”를 강화합니다.</li>
+            <li><strong>서명/배포 안정화:</strong> macOS signing/notarization, Windows signing은 아직 남은 운영 과제입니다.</li>
+          </ol>
+        </section>
+        <div class="empty-state" id="empty-state">검색 결과가 없습니다. 다른 키워드를 입력해 보세요.</div>
+      </div>
+    </main>
+
+    <aside class="toc" aria-label="현재 페이지 목차">
+      <h2>On this page</h2>
+      <nav id="toc-links"></nav>
+    </aside>
+  </div>
+
+  <script>
+    const sections = Array.from(document.querySelectorAll('.searchable[id]'));
+    const sideLinks = Array.from(document.querySelectorAll('.side-link[href^="#"]'));
+    const toc = document.getElementById('toc-links');
+    const empty = document.getElementById('empty-state');
+    const search = document.getElementById('doc-search');
+
+    toc.innerHTML = sections.map(section => `<a href="#${section.id}">${section.querySelector('h1,h2').textContent}</a>`).join('');
+    const tocLinks = Array.from(toc.querySelectorAll('a'));
+
+    function setActive(id) {
+      for (const link of sideLinks.concat(tocLinks)) {
+        link.classList.toggle('active', link.getAttribute('href') === `#${id}`);
+      }
+    }
+
+    const observer = new IntersectionObserver(entries => {
+      const visible = entries.filter(entry => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      if (visible) setActive(visible.target.id);
+    }, { rootMargin: '-18% 0px -70% 0px', threshold: [0.1, 0.25, 0.5] });
+    sections.forEach(section => observer.observe(section));
+
+    function filterDocs(query) {
+      const q = query.trim().toLowerCase();
+      let visibleCount = 0;
+      for (const section of sections) {
+        const haystack = `${section.dataset.title || ''} ${section.textContent}`.toLowerCase();
+        const show = !q || haystack.includes(q);
+        section.style.display = show ? '' : 'none';
+        if (show) visibleCount += 1;
+      }
+      empty.style.display = visibleCount === 0 ? 'block' : 'none';
+      for (const link of sideLinks.concat(tocLinks)) {
+        const target = document.querySelector(link.getAttribute('href'));
+        link.style.display = target && target.style.display === 'none' ? 'none' : '';
+      }
+    }
+
+    search.addEventListener('input', event => filterDocs(event.target.value));
+    window.addEventListener('keydown', event => {
+      if (event.key === '/' && document.activeElement !== search) {
+        event.preventDefault();
+        search.focus();
+      }
+      if (event.key === 'Escape' && document.activeElement === search) {
+        search.value = '';
+        filterDocs('');
+        search.blur();
+      }
+    });
+  </script>
 </body>
 </html>
