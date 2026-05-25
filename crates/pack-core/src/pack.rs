@@ -980,7 +980,7 @@ fn relative_display(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
         .unwrap_or(path)
         .to_string_lossy()
-        .to_string()
+        .replace(std::path::MAIN_SEPARATOR, "/")
 }
 
 fn atomic_write(path: &Path, body: &[u8]) -> Result<()> {
@@ -1251,13 +1251,13 @@ mod tests {
         Pack::init(&root, "p").unwrap();
         let pack = Pack::open(&root).unwrap();
 
-        let img = dir.path().join("a: b.png");
+        let img = dir.path().join("a # b.png");
         std::fs::write(&img, [0x89, 0x50, 0x4e, 0x47]).unwrap();
         pack.add_file(&img, "image:still").unwrap();
-        let note = note::parse_file(&root.join("notes/a: b.md")).unwrap();
+        let note = note::parse_file(&root.join("notes/a # b.md")).unwrap();
         assert_eq!(note.note_type, "image:still");
-        assert_eq!(note.title, "a: b");
-        assert_eq!(note.asset.as_deref(), Some("assets/a: b.png"));
+        assert_eq!(note.title, "a # b");
+        assert_eq!(note.asset.as_deref(), Some("assets/a # b.png"));
     }
     #[test]
     fn build_index_incremental_reports_skips() {
