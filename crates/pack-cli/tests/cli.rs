@@ -865,7 +865,7 @@ json.dump({
         .arg("--provider-command")
         .arg(provider_command);
     for arg in provider_args {
-        command.arg(arg);
+        command.arg("--provider-arg").arg(arg);
     }
     command
         .args(["--limit", "1"])
@@ -928,7 +928,7 @@ fn bundled_fixture_provider_enriches_media() {
         .arg("--provider-command")
         .arg(provider_command);
     for arg in provider_args {
-        command.arg(arg);
+        command.arg("--provider-arg").arg(arg);
     }
     command
         .args(["--limit", "1"])
